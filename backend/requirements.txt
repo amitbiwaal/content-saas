@@ -1,0 +1,26 @@
+# Floors chosen for broad interpreter support (incl. Python 3.13/3.14). Pin
+# exact versions once a target runtime is fixed for deployment.
+fastapi>=0.115
+uvicorn[standard]>=0.34
+gunicorn>=22        # prod process manager (UvicornWorker); see gunicorn.conf.py
+sqlalchemy>=2.0.36
+alembic>=1.13       # schema migrations (prod: `alembic upgrade head`)
+pydantic>=2.10
+pydantic-settings>=2.6
+python-dotenv>=1.0
+httpx>=0.27
+anthropic>=0.42
+python-docx>=1.1   # DOCX export (PRD §15); lazy-imported, optional
+
+# Optional real-provider SDKs (PRD §12). Install only the ones you have keys
+# for; absent any of these, get_adapter falls back to the deterministic mock.
+# xAI/Grok uses the openai client against base_url https://api.x.ai/v1 (no
+# separate SDK).
+openai>=1.0          # optional — OpenAI + xAI seats
+google-genai>=1.0    # optional — Google Gemini seat
+
+# Postgres driver (prod only). SQLite needs nothing extra.
+psycopg[binary]>=3.2; python_version < "3.14"
+
+# Dev / test
+pytest>=8.3

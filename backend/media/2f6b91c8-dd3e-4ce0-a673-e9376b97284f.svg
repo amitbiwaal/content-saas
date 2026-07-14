@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#04120d"/>
+      <stop offset="0.5" stop-color="#0a2a1f"/>
+      <stop offset="1" stop-color="#05171a"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.7" cy="0.3" r="0.6">
+      <stop offset="0" stop-color="#10b981" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#10b981" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#orb)"/>
+  <circle cx="240" cy="720" r="360" fill="#22d3ee" opacity="0.12"/>
+  <text x="800" y="420" fill="#eafff5" font-family="Inter, Arial, sans-serif" font-size="56" font-weight="800" text-anchor="middle"><tspan x="800" dy="0">Notion vs Obsidian 2026:</tspan><tspan x="800" dy="64">which note app should you</tspan><tspan x="800" dy="64">pick</tspan></text>
+  <text x="800" y="820" fill="#6ee7b7" font-family="Inter, Arial, sans-serif" font-size="24" letter-spacing="3" text-anchor="middle">CONTENTOS AI · PLACEHOLDER (add OPENAI_API_KEY for a real image)</text>
+</svg>
