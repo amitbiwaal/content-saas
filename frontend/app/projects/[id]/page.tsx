@@ -7,6 +7,7 @@ import PipelineStepper, {
   type StageStatus,
 } from "../../../components/PipelineStepper";
 import Shell from "../../../components/Shell";
+import DecisionButtons from "../../../components/DecisionButtons";
 import { useLang } from "../../../lib/i18n";
 import { api } from "../../../lib/api";
 import type {
@@ -25,15 +26,6 @@ const TARGETS: Record<keyof Scores, number> = {
 };
 const scoreOk = (axis: keyof Scores, v: number) =>
   axis === "spam" ? v < TARGETS[axis] : v >= TARGETS[axis];
-
-const LABEL_CLASS: Record<string, string> = {
-  accepted: "lab-green",
-  rejected: "lab-red",
-  needs_evidence: "lab-amber",
-  merge: "lab-blue",
-  manual_review: "lab-purple",
-};
-const LABELS = Object.keys(LABEL_CLASS);
 
 const PROVIDER_TINT: Record<string, string> = {
   openai: "tint-green",
@@ -339,17 +331,13 @@ export default function ProjectDetailPage() {
                       <div className="row-title">{d.point}</div>
                       <div className="row-sub">{d.source}{d.reason ? ` — ${d.reason}` : ""}</div>
                     </div>
-                    <div className="decision-override">
+                    <div className="decision-override" title={d.id ? undefined : t("Re-run to enable override")}>
                       {d.overridden_by && <span className="overridden">{t("overridden")}</span>}
-                      <select
-                        className={`lab-select ${LABEL_CLASS[d.label] || "lab-blue"}`}
+                      <DecisionButtons
                         value={d.label}
                         disabled={!d.id}
-                        title={d.id ? t("Override the Judge decision") : t("Re-run to enable override")}
-                        onChange={(e) => overrideDecision(d.id, e.target.value)}
-                      >
-                        {LABELS.map((l) => <option key={l} value={l}>{t(l.replace(/_/g, " "))}</option>)}
-                      </select>
+                        onSelect={(label) => overrideDecision(d.id, label)}
+                      />
                     </div>
                   </div>
                 ))}

@@ -94,6 +94,19 @@ def test_ahrefs_stub_returns_mock_shape_with_todo():
     assert out["provider"] == "ahrefs"
 
 
-def test_get_research_provider_defaults_to_mock():
-    # Default settings.research_provider == "mock".
+def test_get_research_provider_defaults_to_mock(monkeypatch):
+    # With research_provider == "mock" (the code default) the mock is returned.
+    # Force the setting so the test is independent of a local .env that may select
+    # a live provider (duckduckgo/brave).
+    from types import SimpleNamespace
+
+    import app.config as cfg
+
+    monkeypatch.setattr(
+        cfg,
+        "get_settings",
+        lambda: SimpleNamespace(
+            research_provider="mock", brave_api_key="", ahrefs_api_key=""
+        ),
+    )
     assert isinstance(get_research_provider(), MockResearchProvider)

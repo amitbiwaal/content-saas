@@ -30,10 +30,12 @@ from app.export.service import (
     to_gutenberg,
     to_html,
     to_markdown,
+    webhook_publish,
     wordpress_publish,
 )
-from app.models import Claim, Draft, Project, Score
+from app.models import Claim, Draft, Project, Score, User, WebhookConfig, WordPressConfig
 from app.scoring.gate import Scores, evaluate_gate
+from app.security import get_current_user
 
 router = APIRouter(prefix="/api/projects", tags=["export"])
 
@@ -47,6 +49,12 @@ class WordPressPublishIn(BaseModel):
     creds: dict | None = None          # {site_url, username, app_password}
     schedule: str | None = None        # ISO-8601 datetime -> schedule the post
     seo: dict | None = None            # {focus_keyword, meta_description, title}
+
+
+class WebhookPublishIn(BaseModel):
+    """Request body for the generic (custom-site) live export."""
+
+    status: str | None = None          # draft | publish (overrides the saved default)
     status: str | None = None          # publish | draft | future
 
 
@@ -202,11 +210,39 @@ def export_draft(
     return Response(content=json.dumps(data, indent=2), media_type="application/ld+json")
 
 
+def _enforce_publish_gate(db: Session, draft: Draft) -> None:
+    """Raise 409 (with blocker reasons) unless the draft clears the publish gate.
+
+    Shared by every live-export target (WordPress, custom webhook) so the same
+    Score thresholds + no-high-risk-unsupported-claim rule guards all of them.
+    """
+    score = _latest_score(db, draft.id)
+    if score is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "passed": False,
+                "reasons": ["draft has not been scored; run scoring before live export"],
+            },
+        )
+    scores = Scores(
+        seo=score.seo, aeo=score.aeo, geo=score.geo, heo=score.heo,
+        eeat=score.eeat, fact=score.fact, spam=score.spam, publish=score.publish,
+    )
+    verdict = evaluate_gate(
+        scores, high_risk_unsupported_claims=_high_risk_unsupported(db, draft.id)
+    )
+    if not verdict.passed:
+        # FR-10.3: block live export and surface every gate blocker.
+        raise HTTPException(status_code=409, detail={"passed": False, "reasons": verdict.reasons})
+
+
 @router.post("/{project_id}/export/wordpress")
 def export_to_wordpress(
     project_id: str,
     body: WordPressPublishIn | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Export the latest draft to WordPress (STUB) behind the publish gate (FR-10.2/10.3).
 
@@ -221,52 +257,65 @@ def export_to_wordpress(
     if not draft:
         raise HTTPException(status_code=404, detail="no draft to export")
 
-    score = _latest_score(db, draft.id)
-    if score is None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "passed": False,
-                "reasons": ["draft has not been scored; run scoring before live export"],
-            },
-        )
+    _enforce_publish_gate(db, draft)
 
-    scores = Scores(
-        seo=score.seo,
-        aeo=score.aeo,
-        geo=score.geo,
-        heo=score.heo,
-        eeat=score.eeat,
-        fact=score.fact,
-        spam=score.spam,
-        publish=score.publish,
-    )
-    verdict = evaluate_gate(
-        scores, high_risk_unsupported_claims=_high_risk_unsupported(db, draft.id)
-    )
-    if not verdict.passed:
-        # FR-10.3: block live export and surface every gate blocker.
-        raise HTTPException(
-            status_code=409,
-            detail={"passed": False, "reasons": verdict.reasons},
-        )
-
-    # Merge request creds over the configured WordPress defaults (PRD §15).
+    # Prefer the current user's saved WordPress connection (PRD §15); fall back to
+    # the server-configured defaults; a request body can still override per call.
+    if project.owner_id is not None and project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="project not found")
+    user_wp = db.scalars(
+        select(WordPressConfig).where(WordPressConfig.user_id == user.id)
+    ).first()
     settings = get_settings()
     creds = {
-        "site_url": settings.wordpress_url,
-        "username": settings.wordpress_username,
-        "app_password": settings.wordpress_app_password,
+        "site_url": (user_wp.site_url if user_wp else settings.wordpress_url),
+        "username": (user_wp.username if user_wp else settings.wordpress_username),
+        "app_password": (user_wp.app_password if user_wp else settings.wordpress_app_password),
         **((body.creds if body else None) or {}),
     }
+    status = (body.status if body else None) or (user_wp.default_status if user_wp else None)
     return wordpress_publish(
         _draft_payload(draft),
         _brief_from_project(project),
         creds,
         schedule=body.schedule if body else None,
         seo=body.seo if body else None,
-        status=body.status if body else None,
+        status=status,
         featured_image=_featured_image(project),
+    )
+
+
+@router.post("/{project_id}/export/webhook")
+def export_to_webhook(
+    project_id: str,
+    body: WebhookPublishIn | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Publish the latest draft to the user's custom endpoint, behind the gate.
+
+    Same publish gate as WordPress; reads the current user's saved webhook
+    connection and POSTs the article as a JSON envelope (dry run if none set).
+    """
+    project = _require_project(project_id, db)
+    draft = _latest_draft(db, project_id)
+    if not draft:
+        raise HTTPException(status_code=404, detail="no draft to export")
+    _enforce_publish_gate(db, draft)
+    if project.owner_id is not None and project.owner_id != user.id:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    cfg = db.scalars(
+        select(WebhookConfig).where(WebhookConfig.user_id == user.id)
+    ).first()
+    config = {
+        "endpoint_url": cfg.endpoint_url if cfg else "",
+        "auth_token": cfg.auth_token if cfg else None,
+        "default_status": cfg.default_status if cfg else "draft",
+    }
+    status = (body.status if body else None) or (cfg.default_status if cfg else None)
+    return webhook_publish(
+        _draft_payload(draft), _brief_from_project(project), config, status=status
     )
 
 

@@ -24,8 +24,8 @@ export default function AnalyticsPage() {
     <Shell title={t("Analytics")}>
       <section className="metrics">
         <div className="card metric"><div className="metric-value">${c.total_usd.toFixed(2)}</div><div className="metric-label">{t("Total AI cost")}</div></div>
-        <div className="card metric"><div className="metric-value">{c.total_tokens.toLocaleString()}</div><div className="metric-label">{t("Tokens used")}</div></div>
-        <div className="card metric"><div className="metric-value">{a.traffic.organic_visits_30d.toLocaleString()}</div><div className="metric-label">{t("Organic visits (30d)")}</div></div>
+        <div className="card metric"><div className="metric-value">{c.total_tokens.toLocaleString("en-US")}</div><div className="metric-label">{t("Tokens used")}</div></div>
+        <div className="card metric"><div className="metric-value">{a.traffic.organic_visits_30d.toLocaleString("en-US")}</div><div className="metric-label">{t("Organic visits (30d)")}</div></div>
         <div className="card metric"><div className="metric-value">{a.traffic.ai_citations}</div><div className="metric-label">{t("AI citations")}</div></div>
         <div className="card metric"><div className="metric-value">{a.decay_alerts.length}</div><div className="metric-label">{t("Decay alerts")}</div></div>
       </section>
@@ -47,7 +47,7 @@ export default function AnalyticsPage() {
               <Link className="row" key={p.project_id} href={`/projects/${p.project_id}`}>
                 <div>
                   <div className="row-title">{p.topic}</div>
-                  <div className="row-sub">{p.tokens.toLocaleString()} tokens · {p.organic_visits_30d.toLocaleString()} visits/30d</div>
+                  <div className="row-sub">{p.tokens.toLocaleString("en-US")} tokens · {p.organic_visits_30d.toLocaleString("en-US")} visits/30d</div>
                 </div>
                 <span className="lab lab-blue">${(p.cost_cents / 100).toFixed(2)}</span>
               </Link>

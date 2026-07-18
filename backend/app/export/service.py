@@ -463,6 +463,12 @@ def wordpress_publish(
 
     import httpx
 
+    from app.net import guard_ssrf
+
+    # Re-validate at publish time (defense in depth vs DNS-rebinding), then never
+    # follow redirects — a public host must not bounce us onto an internal one.
+    guard_ssrf(site_url)
+
     auth = base64.b64encode(f"{username}:{app_password}".encode()).decode()
     headers = {"Authorization": f"Basic {auth}"}
 
@@ -480,6 +486,7 @@ def wordpress_publish(
                     "Content-Disposition": f'attachment; filename="{filename}"',
                 },
                 timeout=60,
+                follow_redirects=False,
             )
             media.raise_for_status()
             media_id = media.json().get("id")
@@ -491,12 +498,13 @@ def wordpress_publish(
                         json={"alt_text": featured_image["alt"]},
                         headers=headers,
                         timeout=30,
+                        follow_redirects=False,
                     )
         except Exception:  # noqa: BLE001 - a media failure must not block the post
             media_id = None
 
     try:
-        resp = httpx.post(endpoint, json=payload, headers=headers, timeout=30)
+        resp = httpx.post(endpoint, json=payload, headers=headers, timeout=30, follow_redirects=False)
         resp.raise_for_status()
         data = resp.json()
         return {
@@ -509,6 +517,89 @@ def wordpress_publish(
         }
     except Exception as exc:  # noqa: BLE001 - surface any WP/transport error
         return {"status": "error", "error": str(exc), "endpoint": endpoint, "payload": payload}
+
+
+def _slugify(text: str) -> str:
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return slug[:80] or "post"
+
+
+def webhook_publish(
+    draft: dict, project: dict | None, config: dict | None, *, status: str | None = None
+) -> dict:
+    """POST the finished article to a user's custom endpoint (generic publisher).
+
+    For non-WordPress stacks: sends a stable JSON envelope (title, slug, HTML,
+    Markdown, meta) that any backend can consume, with an optional
+    ``Authorization: Bearer <token>``. No endpoint configured => a **dry run** (no
+    network), so the pipeline still runs. SSRF-guarded and non-redirecting like the
+    WordPress path. A 2xx response is success; the returned URL/id (if the endpoint
+    sends JSON with ``url``/``link``/``id``) is surfaced back.
+    """
+    config = config or {}
+    endpoint = (config.get("endpoint_url") or "").strip().rstrip("/")
+    token = config.get("auth_token")
+    post_status = status or config.get("default_status") or "draft"
+
+    title = _title(draft, project)
+    keyword = (project or {}).get("keyword") or ""
+    envelope = {
+        "source": "contentos",
+        "status": post_status,
+        "title": title,
+        "slug": _slugify(title),
+        "keyword": keyword,
+        "html": to_html(draft),
+        "markdown": to_markdown(draft),
+        "meta": {"title": title, "focus_keyword": keyword},
+    }
+
+    if not endpoint:
+        return {
+            "status": "would_publish",
+            "note": "No custom endpoint configured — dry run. Add one in Settings.",
+            "endpoint": endpoint,
+            "payload": envelope,
+        }
+
+    import httpx
+
+    from app.net import guard_ssrf
+
+    guard_ssrf(endpoint)
+    headers = {"Content-Type": "application/json", "User-Agent": "ContentOS/1.0"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        resp = httpx.post(
+            endpoint, json=envelope, headers=headers, timeout=30, follow_redirects=False
+        )
+        resp.raise_for_status()
+        link = rid = None
+        try:
+            data = resp.json()
+            if isinstance(data, dict):
+                link = data.get("url") or data.get("link") or data.get("permalink")
+                rid = data.get("id")
+        except Exception:  # noqa: BLE001 - a non-JSON 2xx body is still a success
+            pass
+        return {
+            "status": "published",
+            "http_status": resp.status_code,
+            "link": link,
+            "id": rid,
+            "endpoint": endpoint,
+        }
+    except httpx.HTTPStatusError as exc:
+        return {
+            "status": "error",
+            "error": f"endpoint returned {exc.response.status_code}",
+            "endpoint": endpoint,
+        }
+    except Exception as exc:  # noqa: BLE001 - surface any transport error
+        return {"status": "error", "error": str(exc), "endpoint": endpoint}
 
 
 # --------------------------------------------------------------------------- #

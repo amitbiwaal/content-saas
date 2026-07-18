@@ -188,14 +188,26 @@ def _count_words(markdown: str) -> int:
 
 
 def _brief_summary(brief: dict) -> str:
-    return (
-        f"Topic: {brief.get('topic', '')}\n"
-        f"Primary keyword: {brief.get('keyword', '')}\n"
-        f"Country: {brief.get('country', 'US')}\n"
-        f"Audience: {brief.get('audience') or 'general readers'}\n"
-        f"Tone: {brief.get('tone') or 'neutral, balanced'}\n"
-        f"Goal: {brief.get('goal') or 'rank on search and be cited by AI engines'}"
-    )
+    lines = [
+        f"Topic: {brief.get('topic', '')}",
+        f"Primary keyword: {brief.get('keyword', '')}",
+        f"Country: {brief.get('country', 'US')}",
+        f"Audience: {brief.get('audience') or 'general readers'}",
+        f"Tone: {brief.get('tone') or 'neutral, balanced'}",
+        f"Goal: {brief.get('goal') or 'rank on search and be cited by AI engines'}",
+    ]
+    atype = (brief.get("article_type") or "").strip()
+    if atype:
+        lines.append(
+            f"Article format: {atype} — structure and depth this section to fit a {atype}."
+        )
+    words = brief.get("word_count")
+    if isinstance(words, int) and words > 0:
+        lines.append(
+            f"Target total length: about {words} words across the whole article; "
+            "size this section proportionally to its importance (add depth, never padding)."
+        )
+    return "\n".join(lines)
 
 
 def _research_sources_text(research: dict) -> str:

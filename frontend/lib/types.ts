@@ -70,6 +70,8 @@ export type ProjectCreate = {
   audience?: string | null;
   tone?: string | null;
   goal?: string | null;
+  article_type?: string | null;
+  word_count?: number | null;
 };
 
 export type Scores = {
@@ -124,9 +126,20 @@ export type AgentReport = {
   routed_from?: string | null;
 };
 
+export type DebateTurnWire = {
+  round: number;
+  role: string;
+  provider?: string;
+  addressed_to?: string | null;
+  stance: string;
+  text: string;
+  confidence?: number | null;
+};
 export type DebateData = {
   messages: Array<Record<string, unknown>>;
   conflicts: Array<Record<string, unknown>>;
+  // Threaded transcript (openings → pairwise rebuttals/replies → Judge verdict).
+  turns: DebateTurnWire[];
   reports: AgentReport[];
 };
 
@@ -189,9 +202,9 @@ export type SectionDiff = {
   new: DraftSection;
 };
 
-export type SerpItem = { rank?: number; title: string; url?: string; domain?: string; snippet?: string };
+export type SerpItem = { rank?: number; title: string; url?: string; domain?: string; snippet?: string; favicon?: string };
 export type EntityItem = { name: string; type?: string; salience?: number };
-export type SourceItem = { title: string; url?: string; trust?: string };
+export type SourceItem = { title: string; url?: string; trust?: string; favicon?: string; domain?: string };
 export type Research = {
   id?: string;
   serp: SerpItem[];
@@ -218,4 +231,62 @@ export type Outline = {
   nodes: OutlineNode[];
   elements: OutlineElement[];
   schema_hooks?: { type: string; target?: string }[];
+};
+
+// --- Admin panel (mirror app/admin/router.py) -------------------------------
+export type AdminStats = {
+  users_total: number;
+  users_admins: number;
+  users_suspended: number;
+  users_new_7d: number;
+  projects_total: number;
+  projects_by_stage: Record<string, number>;
+  runs_total: number;
+  runs_by_status: Record<string, number>;
+  credits_granted: number;
+  credits_spent: number;
+  credits_outstanding: number;
+};
+
+export type AdminUser = {
+  id: string;
+  email: string;
+  name: string | null;
+  credits: number;
+  plan: string;             // free | pro | business
+  is_admin: boolean;        // persisted flag
+  effective_admin: boolean; // flag OR ADMIN_EMAILS allow-list
+  is_active: boolean;       // false => suspended
+  projects: number;
+  created_at: string;
+};
+
+export type AdminUsers = { total: number; limit: number; offset: number; users: AdminUser[] };
+
+export type AdminSort = "joined" | "credits" | "email" | "name" | "projects";
+export type SortOrder = "asc" | "desc";
+
+export type AdminProject = {
+  id: string;
+  topic: string;
+  keyword: string;
+  stage: string;
+  created_at: string;
+  owner_id: string | null;
+  owner_email: string | null;
+};
+
+export type AdminLedgerEntry = {
+  delta: number;
+  balance_after: number;
+  reason: string;
+  detail: string | null;
+  project_id: string | null;
+  created_at: string;
+};
+
+export type AdminUserDetail = {
+  user: AdminUser;
+  projects: AdminProject[];
+  ledger: AdminLedgerEntry[];
 };

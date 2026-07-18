@@ -56,6 +56,10 @@ export default function EditorPage() {
   const [schedule, setSchedule] = useState("");
   const [publishing, setPublishing] = useState(false);
   const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  // Custom-site (webhook) publish — for non-WordPress stacks
+  const [whStatus, setWhStatus] = useState<"draft" | "publish">("draft");
+  const [whPublishing, setWhPublishing] = useState(false);
+  const [whMsg, setWhMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // Distribute (LinkedIn / Reddit / Google Docs)
   const [distCh, setDistCh] = useState<"linkedin" | "reddit" | "gdoc">("linkedin");
@@ -176,6 +180,21 @@ export default function EditorPage() {
     } catch (e) {
       setPublishMsg({ ok: false, text: gateMessage(String(e)) });
     } finally { setPublishing(false); }
+  }
+
+  async function publishWh() {
+    setWhPublishing(true); setWhMsg(null);
+    try {
+      const res = await api.publishWebhook(id, { status: whStatus }) as Record<string, string>;
+      const st = res.status;
+      const text =
+        st === "published" ? `Published ✓ ${res.link || ""}` :
+        st === "would_publish" ? "Dry run ✓ — connect your endpoint in Settings to publish live." :
+        st === "error" ? `Endpoint error: ${res.error || "unknown"}` : JSON.stringify(res);
+      setWhMsg({ ok: st !== "error", text });
+    } catch (e) {
+      setWhMsg({ ok: false, text: gateMessage(String(e)) });
+    } finally { setWhPublishing(false); }
   }
 
   async function genPost(channel: "linkedin" | "reddit") {
@@ -389,6 +408,25 @@ export default function EditorPage() {
             </button>
             {!gatePassed && <p className="muted xs">Note: live publish is blocked until the gate passes (scores above).</p>}
             {publishMsg && <p className={publishMsg.ok ? "ok-text xs" : "error xs"}>{publishMsg.text}</p>}
+          </div>
+
+          {/* Custom site (webhook) publish — non-WordPress stacks */}
+          <div className="ed-card">
+            <div className="ed-card-title">Publish to your site</div>
+            <p className="muted xs">
+              For non-WordPress sites (Ghost, Webflow, headless, or your own API). Connect an endpoint in Settings; otherwise this runs as a dry run.
+            </p>
+            <div className="ed-row">
+              <select className="ed-input" value={whStatus} onChange={(e) => setWhStatus(e.target.value as typeof whStatus)}>
+                <option value="draft">Draft</option>
+                <option value="publish">Publish</option>
+              </select>
+            </div>
+            <button className="btn btn-primary btn-block" onClick={publishWh} disabled={whPublishing}>
+              {whPublishing ? "Publishing…" : "⬆ Publish to my site"}
+            </button>
+            {!gatePassed && <p className="muted xs">Live publish is blocked until the gate passes.</p>}
+            {whMsg && <p className={whMsg.ok ? "ok-text xs" : "error xs"}>{whMsg.text}</p>}
           </div>
 
           {/* Distribute (repurpose + social) */}

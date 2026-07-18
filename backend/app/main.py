@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app import __version__
+from app.admin.router import router as admin_router
 from app.analytics.router import router as analytics_router
 from app.auth import require_auth
 from app.article.router import router as article_router
@@ -33,9 +34,13 @@ from app.memory_engine.router import router as memory_router
 from app.outline.router import router as outline_router
 from app.pipeline.router import router as pipeline_router
 from app.providers.registry import REGISTRY
+from app.ratelimit import rate_limit_middleware
 from app.research.router import router as research_router
 from app.review.router import router as review_router
 from app.routers import projects
+from app.routers.auth import router as auth_router
+from app.routers.webhook import router as webhook_router
+from app.routers.wordpress import router as wordpress_router
 from app.scoring.router import router as scoring_router
 
 settings = get_settings()
@@ -52,6 +57,12 @@ async def lifespan(app: FastAPI):
     # Dev convenience: auto-create tables (no-op in prod; see app.db.init_db).
     # Prod schema is managed by Alembic (`alembic upgrade head`).
     init_db()
+    # A run executes in a detached background worker; if a previous process died
+    # mid-run its Run row is still "running" but its worker is gone. Flip those to
+    # "interrupted" so they aren't mistaken for live (artifacts are persisted).
+    from app.pipeline.hub import reap_interrupted
+
+    reap_interrupted()
     try:
         yield
     finally:
@@ -82,6 +93,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Throttle the billed pipeline + auth routes (per user/IP). Registered after CORS
+# so preflight (OPTIONS) is handled first and never counted.
+app.middleware("http")(rate_limit_middleware)
+
 
 @app.exception_handler(Exception)
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -93,6 +108,10 @@ async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSON
     logger.exception("unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
+app.include_router(auth_router)
+app.include_router(admin_router)
+app.include_router(wordpress_router)
+app.include_router(webhook_router)
 app.include_router(projects.router)
 app.include_router(research_router)
 app.include_router(review_router)

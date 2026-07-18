@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Project
-from app.review.service import GATED_STAGES, approve_stage, next_stage
+from app.review.service import GATED_STAGES, approve_stage, next_stage, touch_stage
 
 router = APIRouter(prefix="/api/projects", tags=["review"])
 
@@ -30,6 +30,19 @@ class ApproveIn(BaseModel):
     by: str = "editor"
     # Optional approval note; kept in the audit ledger.
     note: str | None = Field(default=None, max_length=2000)
+
+
+class RejectIn(BaseModel):
+    """Editor rejection of a gated stage → regenerate it with feedback.
+
+    Marks the stage pending again (recording the feedback for the regenerate) and
+    clears every downstream approval. The client then reopens the gated stream
+    with ``from=<stage>`` to rebuild that stage; the pipeline reads this feedback
+    and weaves it into the regeneration.
+    """
+
+    stage: str
+    feedback: str | None = Field(default=None, max_length=2000)
 
 
 class CheckpointsOut(BaseModel):
@@ -59,6 +72,31 @@ def approve(
     )
     # Reflect the human sign-off in the coarse project stage too, so lists/badges
     # that read ``project.stage`` show progress without loading the ledger.
+    _sync_stage(project)
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    return CheckpointsOut(
+        checkpoints=project.checkpoints or {}, next=next_stage(project.checkpoints)
+    )
+
+
+@router.post("/{project_id}/reject", response_model=CheckpointsOut)
+def reject(
+    project_id: str, payload: RejectIn, db: Session = Depends(get_db)
+) -> CheckpointsOut:
+    """Reject a gated stage and queue it for regeneration with feedback."""
+    if payload.stage not in GATED_STAGES:
+        raise HTTPException(
+            status_code=422, detail=f"stage must be one of {list(GATED_STAGES)}"
+        )
+    project = db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="project not found")
+
+    project.checkpoints = touch_stage(
+        project.checkpoints, payload.stage, feedback=payload.feedback
+    )
     _sync_stage(project)
     db.add(project)
     db.commit()

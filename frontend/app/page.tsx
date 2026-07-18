@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import LandingHeader from "../components/LandingHeader";
+import MarketingFooter from "../components/MarketingFooter";
 import { useLang } from "../lib/i18n";
+import { PLANS } from "../lib/pricing";
 
 const SURFACES = ["Google", "AI Overviews", "ChatGPT", "Perplexity"];
 
@@ -413,17 +415,19 @@ export default function LandingPage() {
               <article className="lp-why-card lp-rise">
                 <span className="lp-why-chip" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 3v18" />
-                    <path d="M12 5 5 8m7-3 7 3" />
-                    <path d="M5 8l-2.6 5.2a3 3 0 0 0 5.2 0L5 8Z" />
-                    <path d="M19 8l-2.6 5.2a3 3 0 0 0 5.2 0L19 8Z" />
-                    <path d="M8 21h8" />
+                    <path d="m3 7 2 2 4-4" />
+                    <path d="m3 17 2 2 4-4" />
+                    <path d="M13 6h8" />
+                    <path d="M13 12h8" />
+                    <path d="M13 18h8" />
                   </svg>
                 </span>
-                <h3 className="lp-why-card-title">A Judge you can override</h3>
+                <h3 className="lp-why-card-title">You approve every step</h3>
                 <p className="lp-why-card-desc">
-                  Every recommendation is accepted, rejected or merged with a
-                  human-readable reason you can change.
+                  Switch on review mode and the run pauses at every stage &mdash;
+                  research, council, outline, draft. Approve to move on, or send it
+                  back with notes to regenerate. Every Judge call is yours to
+                  override, too.
                 </p>
               </article>
 
@@ -884,148 +888,47 @@ export default function LandingPage() {
               </p>
             </div>
 
+            {/* Teaser cards — plans come from lib/pricing.ts, the same source the
+                dedicated /pricing page reads, so the two can never disagree. */}
             <div className="lp-pr-grid">
-              {/* Free */}
-              <div className="lp-pr-card lp-rise">
-                <div className="lp-pr-card-top">
-                  <span className="lp-pr-plan">Free</span>
-                  <p className="lp-pr-plan-note">For a first project</p>
+              {PLANS.map((p) => (
+                <div
+                  key={p.id}
+                  className={`lp-pr-card lp-rise${p.popular ? " lp-pr-card--pop" : ""}`}
+                >
+                  {p.popular && <span className="lp-pr-badge">{t("Most popular")}</span>}
+                  <div className="lp-pr-card-top">
+                    <span className="lp-pr-plan">{t(p.name)}</span>
+                    <p className="lp-pr-plan-note">{t(p.note)}</p>
+                  </div>
+                  <div className="lp-pr-price">
+                    <span className="lp-pr-amt">${p.monthly}</span>
+                    <span className="lp-pr-per">/{t("mo")}</span>
+                  </div>
+                  <div className="lp-pr-credits">
+                    <span className="lp-pr-credits-num">
+                      {p.credits.toLocaleString("en-US")} {t("credits")}
+                    </span>
+                    <span className="lp-pr-credits-lbl">/ {t("mo")}</span>
+                  </div>
+                  <Link
+                    href="/pricing"
+                    className={`${p.popular ? "lp-btn-primary" : "lp-btn-ghost"} lp-pr-cta`}
+                  >
+                    {t(p.cta)}
+                  </Link>
+                  <ul className="lp-pr-feats">
+                    {p.features.map((f) => (
+                      <li className="lp-pr-feat" key={f}>
+                        <span className="lp-pr-check" aria-hidden="true">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+                        </span>
+                        {t(f)}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <div className="lp-pr-price">
-                  <span className="lp-pr-amt">$0</span>
-                  <span className="lp-pr-per">/mo</span>
-                </div>
-                <div className="lp-pr-credits">
-                  <span className="lp-pr-credits-num">500 credits</span>
-                  <span className="lp-pr-credits-lbl">/ mo</span>
-                </div>
-                <a href="#get-started" className="lp-btn-ghost lp-pr-cta">Start free</a>
-                <ul className="lp-pr-feats">
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    1 active project
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Mock providers, zero API spend
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Markdown &amp; HTML export
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Community support
-                  </li>
-                </ul>
-              </div>
-
-              {/* Pro, most popular */}
-              <div className="lp-pr-card lp-pr-card--pop lp-rise">
-                <span className="lp-pr-badge">Most popular</span>
-                <div className="lp-pr-card-top">
-                  <span className="lp-pr-plan">Pro</span>
-                  <p className="lp-pr-plan-note">For operators shipping weekly</p>
-                </div>
-                <div className="lp-pr-price">
-                  <span className="lp-pr-amt">$29</span>
-                  <span className="lp-pr-per">/mo</span>
-                </div>
-                <div className="lp-pr-credits">
-                  <span className="lp-pr-credits-num">5,000 credits</span>
-                  <span className="lp-pr-credits-lbl">/ mo</span>
-                </div>
-                <a href="#get-started" className="lp-btn-primary lp-pr-cta">Upgrade to Pro</a>
-                <ul className="lp-pr-feats">
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Unlimited projects
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Bring your own AI keys
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    One-click WordPress publishing
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Priority council routing
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    All 8 scores plus fact-check
-                  </li>
-                </ul>
-              </div>
-
-              {/* Business */}
-              <div className="lp-pr-card lp-rise">
-                <div className="lp-pr-card-top">
-                  <span className="lp-pr-plan">Business</span>
-                  <p className="lp-pr-plan-note">For multi-site teams</p>
-                </div>
-                <div className="lp-pr-price">
-                  <span className="lp-pr-amt">$99</span>
-                  <span className="lp-pr-per">/mo</span>
-                </div>
-                <div className="lp-pr-credits">
-                  <span className="lp-pr-credits-num">25,000 credits</span>
-                  <span className="lp-pr-credits-lbl">/ mo</span>
-                </div>
-                <a href="#get-started" className="lp-btn-ghost lp-pr-cta">Upgrade to Business</a>
-                <ul className="lp-pr-feats">
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Everything in Pro
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Team seats &amp; roles
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Custom house rules
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Restricted-niche routing
-                  </li>
-                  <li className="lp-pr-feat">
-                    <span className="lp-pr-check" aria-hidden="true">
-                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
-                    </span>
-                    Full API access
-                  </li>
-                </ul>
-              </div>
+              ))}
             </div>
 
             <p className="lp-pr-reassure fade-in">
@@ -1237,128 +1140,7 @@ export default function LandingPage() {
         </section>
 
         {/* ===== section: ft ===== */}
-        <footer className="lp-ft">
-          <div className="lp-ft-inner">
-            <div className="lp-ft-cta fade-in">
-              <div className="lp-ft-cta-copy">
-                <span className="lp-eyebrow">
-                  <span className="lp-eyebrow-dot" />
-                  GET STARTED
-                  <span className="lp-eyebrow-tag">FREE BRIEF</span>
-                </span>
-                <h2 className="lp-ft-cta-title">
-                  One brief. Four models.{" "}
-                  <span className="lp-ft-cta-grad">Publish-ready in minutes.</span>
-                </h2>
-                <p className="lp-ft-cta-sub">
-                  Run a single brief through OpenAI, Claude, Gemini and Grok at once,
-                  let the Judge resolve every conflict, and export to WordPress in one click.
-                </p>
-              </div>
-              <div className="lp-ft-cta-actions">
-                <a className="lp-btn-primary" href="#pricing">Start free</a>
-                <a className="lp-btn-ghost" href="#how">See how it works</a>
-              </div>
-            </div>
-
-            <div className="lp-ft-top">
-              <div className="lp-ft-brand">
-                <a href="#" className="lp-ft-logo" aria-label="ContentOS AI home">
-                  <span className="lp-ft-mark" aria-hidden="true">C</span>
-                  <span className="lp-ft-name">
-                    ContentOS<span className="lp-ft-name-ai">AI</span>
-                  </span>
-                </a>
-                <p className="lp-ft-tagline">
-                  The multi-model content engine. A council of AIs debates, a Judge decides,
-                  and every article passes an 8-score gate before it ships.
-                </p>
-                <div className="lp-ft-social" aria-label="Social links">
-                  <a className="lp-ft-social-link" href="#" aria-label="ContentOS AI on X">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 4l16 16" />
-                      <path d="M20 4L4 20" />
-                    </svg>
-                  </a>
-                  <a className="lp-ft-social-link" href="#" aria-label="ContentOS AI on GitHub">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M15 22v-4a3 3 0 0 0-.9-2.3c3-.3 6.1-1.5 6.1-6.6a5.1 5.1 0 0 0-1.4-3.6 4.8 4.8 0 0 0-.1-3.6s-1.1-.3-3.7 1.4a12.6 12.6 0 0 0-6.6 0C6.3 1.7 5.2 2 5.2 2a4.8 4.8 0 0 0-.1 3.6A5.1 5.1 0 0 0 3.7 9.2c0 5.1 3.1 6.3 6.1 6.6A3 3 0 0 0 9 18v4" />
-                      <path d="M9 19c-4 1.4-4-1.8-6-2" />
-                    </svg>
-                  </a>
-                  <a className="lp-ft-social-link" href="#" aria-label="ContentOS AI on LinkedIn">
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <rect x="3" y="3" width="18" height="18" rx="3" />
-                      <path d="M7 10v7" />
-                      <path d="M7 7.01V7" />
-                      <path d="M11 17v-4a2 2 0 0 1 4 0v4" />
-                      <path d="M11 17v-7" />
-                    </svg>
-                  </a>
-                </div>
-              </div>
-
-              <nav className="lp-ft-cols" aria-label="Footer">
-                <div className="lp-ft-col">
-                  <h3 className="lp-ft-col-title">Product</h3>
-                  <ul className="lp-ft-list">
-                    <li><a className="lp-ft-link" href="#how">How it works</a></li>
-                    <li><a className="lp-ft-link" href="#council">The Council</a></li>
-                    <li><a className="lp-ft-link" href="#scoring">Scoring gate</a></li>
-                    <li><a className="lp-ft-link" href="#export">WordPress export</a></li>
-                    <li><a className="lp-ft-link" href="#pricing">Pricing</a></li>
-                  </ul>
-                </div>
-
-                <div className="lp-ft-col">
-                  <h3 className="lp-ft-col-title">Company</h3>
-                  <ul className="lp-ft-list">
-                    <li><a className="lp-ft-link" href="#">About</a></li>
-                    <li><a className="lp-ft-link" href="#">Careers</a></li>
-                    <li><a className="lp-ft-link" href="#">Contact</a></li>
-                  </ul>
-                </div>
-
-                <div className="lp-ft-col">
-                  <h3 className="lp-ft-col-title">Resources</h3>
-                  <ul className="lp-ft-list">
-                    <li><a className="lp-ft-link" href="#">Docs</a></li>
-                    <li><a className="lp-ft-link" href="#">Blog</a></li>
-                    <li><a className="lp-ft-link" href="#">Changelog</a></li>
-                    <li>
-                      <a className="lp-ft-link lp-ft-link-status" href="#">
-                        Status
-                        <span className="lp-ft-status-dot" aria-hidden="true" />
-                        <span className="lp-ft-status-label">All systems normal</span>
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-
-                <div className="lp-ft-col">
-                  <h3 className="lp-ft-col-title">Legal</h3>
-                  <ul className="lp-ft-list">
-                    <li><a className="lp-ft-link" href="#">Privacy</a></li>
-                    <li><a className="lp-ft-link" href="#">Terms</a></li>
-                    <li><a className="lp-ft-link" href="#">Security</a></li>
-                    <li><a className="lp-ft-link" href="#">Acceptable use</a></li>
-                  </ul>
-                </div>
-              </nav>
-            </div>
-
-            <div className="lp-ft-bottom">
-              <p className="lp-ft-copy">© 2026 ContentOS AI. Built by Tech Savy Crew.</p>
-              <ul className="lp-ft-legal">
-                <li><a className="lp-ft-legal-link" href="#">Privacy</a></li>
-                <li aria-hidden="true" className="lp-ft-legal-sep">·</li>
-                <li><a className="lp-ft-legal-link" href="#">Terms</a></li>
-                <li aria-hidden="true" className="lp-ft-legal-sep">·</li>
-                <li><a className="lp-ft-legal-link" href="#">Status</a></li>
-              </ul>
-            </div>
-          </div>
-        </footer>
+        <MarketingFooter />
 
       </main>
     </>

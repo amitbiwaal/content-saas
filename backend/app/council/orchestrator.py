@@ -22,7 +22,13 @@ from dataclasses import dataclass, field
 from app.providers import ProviderError, ProviderRefusal, get_adapter
 from app.providers.base import AdapterResponse
 from app.providers.registry import permissive_providers
-from app.council.roles import DEFAULT_SEATS, JUDGE, ROLES, Role
+from app.council.roles import (
+    DEFAULT_SEATS,
+    JUDGE,
+    JUDGE_DELIBERATION_PROMPT,
+    ROLES,
+    Role,
+)
 
 _ROLE_BY_KEY: dict[str, Role] = {r.key: r for r in ROLES}
 
@@ -36,17 +42,29 @@ _REPORT_FORMAT = (
     "confidence."
 )
 
-# Round-2 debate instruction appended to a seat's system prompt.
-_CRITIQUE_FORMAT = (
-    "\n\nRound 2 — debate. Read the OTHER council members' recommendations below. "
-    "In 2 to 4 sentences, name the single most important disagreement, risk, or "
-    "gap you see in their thinking and defend your own position. Be specific and "
+# Round-2 instruction: challenge ONE specific rival directly (pairwise debate).
+_REBUT_FORMAT = (
+    "\n\nDEBATE — rebuttal. You are challenging ONE specific rival, named below, "
+    "not the group. In 2 to 4 sentences, name the single most important flaw, "
+    "risk, or disagreement in THEIR position and defend your own. Address them "
+    "directly by their role (e.g. \"The Trend Analyst is wrong that…\"). Be "
     "concrete. Do not restate your own list."
+)
+
+# Round-3 instruction: respond to the rebuttal aimed at you — hold, yield, or move.
+_REPLY_FORMAT = (
+    "\n\nDEBATE — response. A rival just challenged your position (quoted below). "
+    "Reply in 2 to 4 sentences, addressing them directly. Begin your reply with "
+    "exactly ONE word in caps — DEFEND (you hold your ground), CONCEDE (they are "
+    "right; you drop or soften the point), or REVISE (you change your "
+    "recommendation) — then a colon and your reasoning."
 )
 
 _CONF_RE = re.compile(r"confidence\s*[:=]\s*([01](?:\.\d+)?|\.\d+|\d{1,3})", re.IGNORECASE)
 _LIST_RE = re.compile(r"^\s*(?:\d+[.)]|[-*•])\s+(.*\S)\s*$")
 _SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+# Leading stance token a seat writes in its reply (parsed → badge, then stripped).
+_STANCE_RE = re.compile(r"^\s*(DEFEND|CONCEDE|REVISE)\b[:.\-—\s]*", re.IGNORECASE)
 
 
 def _parse_recommendations(text: str) -> tuple[list[str], float]:
@@ -106,8 +124,13 @@ class CouncilResult:
     reports: list[SeatReport] = field(default_factory=list)
     debate_messages: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
+    # Every debate utterance in order — the threaded, replayable transcript. Each
+    # entry: {round, role, provider, addressed_to, stance, text}.
+    turns: list[dict] = field(default_factory=list)
     decisions: list[dict] = field(default_factory=list)
     strategy_summary: str = ""
+    # The Judge's human-readable deliberation over the debate (streamed live).
+    deliberation: str = ""
     total_tokens: int = 0
 
 
@@ -209,41 +232,155 @@ def _stream_with_failover(
     raise ProviderError(f"all providers failed for seat (tried {tried}): {last_err}")
 
 
-def _critique_worker(
-    report: SeatReport,
+def _title(role_key: str) -> str:
+    """Human role title (e.g. 'Trend Analyst') for addressing a rival by name."""
+    role = _ROLE_BY_KEY.get(role_key)
+    return role.title if role else role_key.replace("_", " ").title()
+
+
+def _split_stance(text: str) -> tuple[str, str]:
+    """Parse a reply's leading DEFEND/CONCEDE/REVISE token → (stance, clean_text).
+
+    The seat leads its reply with one caps word declaring whether it holds,
+    yields, or moves; we lift it into a stance badge and strip it from the shown
+    text. Falls back to a neutral ``reply`` stance if the seat didn't comply.
+    """
+    match = _STANCE_RE.match(text)
+    if match:
+        return match.group(1).lower(), text[match.end():].strip()
+    return "reply", text.strip()
+
+
+def _pairing(reports: list[SeatReport]) -> dict[str, str]:
+    """Directed ring: each seat is paired to critique exactly one rival.
+
+    ``reports[i]`` challenges ``reports[i+1]`` (wrapping), so with 4 seats every
+    model both critiques one rival and is critiqued by one — a clean pairwise
+    debate rather than everyone-vs-the-group.
+    """
+    n = len(reports)
+    if n < 2:
+        return {}
+    return {reports[i].role: reports[(i + 1) % n].role for i in range(n)}
+
+
+def _debate_worker(
+    role_key: str,
     provider: str,
-    brief_text: str,
-    others: list[dict],
+    system: str,
+    prompt: str,
+    round_no: int,
+    addressed_to: str,
+    stance_hint: str,
+    parse_stance: bool,
     sink: queue.Queue,
 ) -> None:
-    """Round 2 — stream one seat's real critique of the others (runs in a thread).
+    """Stream one debate turn (runs in a thread) — a rebuttal or a reply.
 
-    Each seat reads the other members' recommendations and streams a concrete
-    rebuttal. Emits ``critique_start`` / ``critique_delta`` (live tokens) then a
-    terminal ``critique`` with the assembled text. Never raises: a failed seat
-    yields an empty critique so the debate never hangs.
+    Emits ``turn_start`` (so the UI opens a live bubble threaded at ``addressed_to``),
+    a ``turn_delta`` per token, then a terminal ``turn`` with the assembled text and
+    the final parsed stance. Never raises: a failed seat yields an empty turn so
+    the debate never hangs. Always posts ``__turn_done__`` for the consumer's
+    countdown.
     """
     acc: list[str] = []
-    role = _ROLE_BY_KEY.get(report.role)
-    system = (role.system_prompt if role else "") + _CRITIQUE_FORMAT
-    prompt = (
-        f"{brief_text}\n\nYour own recommendations:\n"
-        f"{json.dumps(report.recommendations)}\n\n"
-        f"The OTHER council members' recommendations:\n{json.dumps(others)[:2500]}"
-    )
     try:
-        sink.put({"type": "critique_start", "role": report.role})
+        sink.put({
+            "type": "turn_start",
+            "round": round_no,
+            "role": role_key,
+            "provider": provider,
+            "addressed_to": addressed_to,
+            "stance": stance_hint,
+        })
         for ev in _stream_with_failover(provider, system=system, prompt=prompt):
             if ev["kind"] == "delta":
                 acc.append(ev["delta"])
-                sink.put(
-                    {"type": "critique_delta", "role": report.role, "delta": ev["delta"]}
-                )
-        sink.put({"type": "critique", "role": report.role, "text": "".join(acc).strip()})
-    except Exception:  # noqa: BLE001 - a failed rebuttal degrades, never hangs
-        sink.put({"type": "critique", "role": report.role, "text": ""})
+                sink.put({
+                    "type": "turn_delta",
+                    "round": round_no,
+                    "role": role_key,
+                    "delta": ev["delta"],
+                })
+        text = "".join(acc).strip()
+        stance, clean = (_split_stance(text) if parse_stance else (stance_hint, text))
+        sink.put({
+            "type": "turn",
+            "round": round_no,
+            "role": role_key,
+            "provider": provider,
+            "addressed_to": addressed_to,
+            "stance": stance,
+            "text": clean,
+        })
+    except Exception:  # noqa: BLE001 - a failed turn degrades, never hangs
+        sink.put({
+            "type": "turn",
+            "round": round_no,
+            "role": role_key,
+            "provider": provider,
+            "addressed_to": addressed_to,
+            "stance": stance_hint,
+            "text": "",
+        })
     finally:
-        sink.put({"type": "__critique_done__"})
+        sink.put({"type": "__turn_done__"})
+
+
+def _run_debate_round(
+    reports: list[SeatReport],
+    brief_text: str,
+    round_no: int,
+    targets: dict[str, str],
+    context: dict[str, str],
+    is_rebuttal: bool,
+):
+    """Run one concurrent debate round; yield its live events, return the turns.
+
+    Every seat speaks at once (its own thread) and tokens interleave live. Each
+    seat addresses the single rival named in ``targets[role]``; ``context[role]``
+    is the rival's material it must respond to (their recommendations for a
+    rebuttal, their rebuttal text for a reply).
+    """
+    d_sink: queue.Queue = queue.Queue()
+    collected: dict[str, dict] = {}
+    with ThreadPoolExecutor(max_workers=len(reports)) as pool:
+        for r in reports:
+            target = targets.get(r.role)
+            if not target:
+                continue
+            role = _ROLE_BY_KEY.get(r.role)
+            base = role.system_prompt if role else ""
+            if is_rebuttal:
+                system = base + _REBUT_FORMAT
+                prompt = (
+                    f"{brief_text}\n\nYour position:\n{json.dumps(r.recommendations)}\n\n"
+                    f"You are debating the {_title(target)}. Their position:\n"
+                    f"{context.get(r.role, '')[:2000]}"
+                )
+            else:
+                system = base + _REPLY_FORMAT
+                prompt = (
+                    f"{brief_text}\n\nYour original position:\n"
+                    f"{json.dumps(r.recommendations)}\n\n"
+                    f"The {_title(target)} challenged you:\n"
+                    f"\"{context.get(r.role, '')[:1500]}\"\n\nRespond to them directly."
+                )
+            pool.submit(
+                _debate_worker, r.role, r.provider, system, prompt,
+                round_no, target, ("rebut" if is_rebuttal else "reply"),
+                not is_rebuttal, d_sink,
+            )
+        remaining = sum(1 for r in reports if targets.get(r.role))
+        while remaining > 0:
+            item = d_sink.get()
+            if item["type"] == "__turn_done__":
+                remaining -= 1
+                continue
+            if item["type"] == "turn":
+                collected[item["role"]] = item
+            yield item
+    return collected
 
 
 def _parse_judge_json(text: str) -> dict | None:
@@ -275,22 +412,81 @@ def _parse_judge_json(text: str) -> dict | None:
     return data if isinstance(data, dict) else None
 
 
+def _build_transcript(reports: list[SeatReport], turns: list[dict]) -> list[dict]:
+    """Assemble the full debate transcript the Judge deliberates over.
+
+    Openings (round-1 recommendations + confidence) followed by every debate turn
+    in order — so the Judge rules on positions *as they stood after the debate*,
+    not just the opening reports (the old Judge never saw the rebuttals at all).
+    """
+    transcript: list[dict] = [
+        {
+            "round": 1,
+            "role": r.role,
+            "stance": "open",
+            "recommendations": r.recommendations,
+            "confidence": r.confidence,
+        }
+        for r in reports
+    ]
+    transcript.extend(
+        {
+            "round": t["round"],
+            "role": t["role"],
+            "addressed_to": t.get("addressed_to"),
+            "stance": t.get("stance"),
+            "text": t.get("text", ""),
+        }
+        for t in turns
+    )
+    return transcript
+
+
+def _judge_deliberate(provider: str, brief_text: str, transcript: list[dict]):
+    """Round 3.5 — stream the Judge's plain-prose deliberation over the debate.
+
+    Yields ``judge_start`` / ``judge_delta`` (live tokens) then a terminal
+    ``judge`` event with the assembled deliberation. Never raises: on total
+    provider failure it yields an empty deliberation and the run continues to the
+    JSON verdict.
+    """
+    acc: list[str] = []
+    prompt = f"{brief_text}\n\nDebate transcript:\n{json.dumps(transcript)[:6000]}"
+    try:
+        yield {"type": "judge_start"}
+        for ev in _stream_with_failover(
+            provider, system=JUDGE_DELIBERATION_PROMPT, prompt=prompt
+        ):
+            if ev["kind"] == "delta":
+                acc.append(ev["delta"])
+                yield {"type": "judge_delta", "delta": ev["delta"]}
+    except Exception:  # noqa: BLE001 - deliberation is best-effort; verdict follows
+        pass
+    yield {"type": "judge", "text": "".join(acc).strip()}
+
+
 def _run_judge(
-    provider: str, brief_text: str, reports: list[SeatReport], conflicts: list[dict]
+    provider: str,
+    brief_text: str,
+    reports: list[SeatReport],
+    transcript: list[dict],
+    deliberation: str,
 ) -> tuple[str, list[dict]]:
-    payload = {
-        "reports": [
-            {"source": r.role, "recommendations": r.recommendations} for r in reports
-        ],
-        "conflicts": conflicts,
-    }
+    """Round 3 — the strict-JSON verdict, informed by the whole debate.
+
+    Unlike the old Judge (which only saw the opening reports + a canned conflict
+    list), this receives the full ``transcript`` and the Judge's own
+    ``deliberation`` so its rulings reflect who actually won each exchange.
+    """
+    payload = {"transcript": transcript, "deliberation": deliberation}
 
     summary = ""
     try:
         resp, _used, _routed = _call_with_failover(
             provider,
             system=JUDGE.system_prompt,
-            prompt=f"{brief_text}\n\nCouncil output:\n{json.dumps(payload)}",
+            prompt=f"{brief_text}\n\nCouncil transcript + your deliberation:\n"
+            f"{json.dumps(payload)[:7000]}",
             json_mode=True,
         )
         data = _parse_judge_json(resp.text)
@@ -301,11 +497,11 @@ def _run_judge(
                 return summary, decisions
     except ProviderError:
         # Judge provider (and every failover) unavailable — degrade like the
-        # seats/critiques do rather than aborting the whole pipeline mid-run.
+        # seats/turns do rather than aborting the whole pipeline mid-run.
         pass
 
     # Fallback: surface every recommendation as needs_evidence so nothing is
-    # silently accepted, but preserve the model's real summary when we got one.
+    # silently accepted, but prefer the streamed deliberation as the summary.
     fallback_decisions = [
         {
             "source": r.role,
@@ -317,7 +513,7 @@ def _run_judge(
         if r.recommendations
     ]
     return (
-        summary or "Strategy pending human review (Judge fallback).",
+        summary or deliberation or "Strategy pending human review (Judge fallback).",
         fallback_decisions,
     )
 
@@ -375,23 +571,33 @@ def _seat_worker(role: Role, provider: str, brief_text: str, sink: queue.Queue) 
         sink.put({"type": "__seat_done__"})
 
 
-def run_council_events(brief: dict, seats: dict[str, str] | None = None):
+def run_council_events(
+    brief: dict, seats: dict[str, str] | None = None, rounds: int = 2
+):
     """Run the council, yielding progress events as each step completes.
 
     Round 1 runs all seats **concurrently** and streams their tokens live, so the
-    four models "type" side by side instead of one after another — both faster
-    and far more engaging (PRD §8.2, §16). Yields ``{"type": ...}`` dicts:
+    four models "type" side by side. Then a real **pairwise debate**: each seat is
+    paired to challenge one specific rival (``rounds`` back-and-forth rounds — a
+    rebuttal, then a reply where the challenged seat DEFENDs / CONCEDEs / REVISEs),
+    every turn streamed live and threaded by who addresses whom. Finally the Judge
+    *deliberates out loud* over the whole transcript (streamed) and returns a
+    strict-JSON verdict informed by the debate (PRD §8.2, §16). Yields
+    ``{"type": ...}`` dicts:
 
         {"type": "roster",       "seats": [...]}          # pre-render seat boxes
         {"type": "report_start", "role", "provider", ...} # a seat began (R1)
         {"type": "report_delta", "role", "delta"}         # a token, live (R1)
         {"type": "report",       "role", "report"}        # a seat finished (R1)
         {"type": "seat_error",   "role", "error"}         # a seat failed (R1)
-        {"type": "critique_start","role"}                 # a seat began rebuttal (R2)
-        {"type": "critique_delta","role", "delta"}        # a token, live (R2)
-        {"type": "critique",     "role", "text"}          # a seat's rebuttal (R2)
-        {"type": "conflict",     "data": dict}            # Round 2, per conflict
-        {"type": "decision",     "decision": dict}        # Round 3, per ruling
+        {"type": "turn_start",   "round","role","addressed_to","stance"} # debate turn opens
+        {"type": "turn_delta",   "round","role","delta"}  # a token, live (debate)
+        {"type": "turn",         "round","role","addressed_to","stance","text"} # turn done
+        {"type": "conflict",     "data": dict}            # a real pairwise clash
+        {"type": "judge_start"}                           # Judge began deliberating
+        {"type": "judge_delta",  "delta"}                 # a token, live (Judge)
+        {"type": "judge",        "text"}                  # Judge deliberation done
+        {"type": "decision",     "decision": dict}        # a Judge ruling
         {"type": "done",         "result": CouncilResult} # terminal
 
     ``run_council`` is implemented on top of this generator so there is one code
@@ -427,45 +633,86 @@ def run_council_events(brief: dict, seats: dict[str, str] | None = None):
     order = {role.key: i for i, role in enumerate(ROLES)}
     reports.sort(key=lambda r: order.get(r.role, len(order)))
 
-    # Round 2 — real debate. Every seat critiques the others concurrently and
-    # streams its rebuttal live; conflicts are derived from what they actually
-    # say, not a canned template (PRD §8.2).
-    messages: list[dict] = []
+    # Rounds 2..N — real pairwise debate. Each seat challenges ONE rival, that
+    # rival replies (DEFEND/CONCEDE/REVISE), and so on. Every turn streams live
+    # and is threaded by who addresses whom; conflicts are the actual clashes
+    # surfaced in the rebuttal round, not a canned template (PRD §8.2).
+    turns: list[dict] = []
     conflicts: list[dict] = []
     if len(reports) >= 2:
-        d_sink: queue.Queue = queue.Queue()
-        critiques: dict[str, str] = {}
-        with ThreadPoolExecutor(max_workers=len(reports)) as pool:
-            for r in reports:
-                others = [
-                    {"role": o.role, "recommendations": o.recommendations}
-                    for o in reports
-                    if o.role != r.role
-                ]
-                pool.submit(
-                    _critique_worker, r, seats[r.role], brief_text, others, d_sink
-                )
-            remaining = len(reports)
-            while remaining > 0:
-                item = d_sink.get()
-                if item["type"] == "__critique_done__":
-                    remaining -= 1
-                    continue
-                if item["type"] == "critique":
-                    critiques[item["role"]] = item["text"]
-                yield item
-        # Build real conflicts + debate transcript from the streamed rebuttals.
-        for r in reports:
-            text = (critiques.get(r.role) or "").strip()
-            if not text:
-                continue
-            messages.append({"from": r.role, "tag": "rebuttal", "text": text})
-            conflict = {"between": [r.role, "council"], "issue": _first_sentence(text)}
-            conflicts.append(conflict)
-            yield {"type": "conflict", "data": conflict}
+        pair = _pairing(reports)  # role → the rival it opens against (rebuttal)
+        recs_by_role = {r.role: r.recommendations for r in reports}
+        incoming_from: dict[str, str] = {}  # role → who last challenged it
+        incoming_text: dict[str, str] = {}  # role → that challenge's text
+        for dr in range(1, max(1, rounds) + 1):
+            round_no = dr + 1  # reports are round 1; debate starts at round 2
+            is_rebuttal = dr == 1
+            if is_rebuttal:
+                targets = pair
+                context = {
+                    role: json.dumps(recs_by_role.get(tgt, []))
+                    for role, tgt in targets.items()
+                }
+            else:
+                # Reply to whoever last challenged me (ring keeps this 1:1).
+                targets = dict(incoming_from)
+                context = dict(incoming_text)
+            if not targets:
+                break
 
-    summary, decisions = _run_judge(  # Round 3 — judge (JSON, non-streamed)
-        seats["judge"], brief_text, reports, conflicts
+            collected = yield from _run_debate_round(
+                reports, brief_text, round_no, targets, context, is_rebuttal
+            )
+
+            next_from: dict[str, str] = {}
+            next_text: dict[str, str] = {}
+            for role, turn in collected.items():
+                text = (turn.get("text") or "").strip()
+                addressed = turn.get("addressed_to")
+                turns.append({
+                    "round": turn["round"],
+                    "role": role,
+                    "provider": turn.get("provider", ""),
+                    "addressed_to": addressed,
+                    "stance": turn.get("stance", "reply"),
+                    "text": text,
+                })
+                if addressed and text:
+                    next_from[addressed] = role
+                    next_text[addressed] = text
+                    if is_rebuttal:
+                        conflict = {
+                            "between": [role, addressed],
+                            "issue": _first_sentence(text),
+                        }
+                        conflicts.append(conflict)
+                        yield {"type": "conflict", "data": conflict}
+            incoming_from, incoming_text = next_from, next_text
+
+    # Back-compat blob for the legacy Debate table (the turn list is canonical).
+    messages = [
+        {
+            "from": t["role"],
+            "to": t.get("addressed_to"),
+            "round": t["round"],
+            "tag": t.get("stance"),
+            "text": t["text"],
+        }
+        for t in turns
+        if t.get("text")
+    ]
+
+    # Round 3 — Judge. Deliberate out loud over the whole transcript (streamed),
+    # then rule in strict JSON informed by that deliberation.
+    transcript = _build_transcript(reports, turns)
+    deliberation = ""
+    for jev in _judge_deliberate(seats["judge"], brief_text, transcript):
+        if jev["type"] == "judge":
+            deliberation = jev["text"]
+        yield jev
+
+    summary, decisions = _run_judge(
+        seats["judge"], brief_text, reports, transcript, deliberation
     )
     for decision in decisions:
         yield {"type": "decision", "decision": decision}
@@ -476,21 +723,27 @@ def run_council_events(brief: dict, seats: dict[str, str] | None = None):
             reports=reports,
             debate_messages=messages,
             conflicts=conflicts,
+            turns=turns,
             decisions=decisions,
             strategy_summary=summary,
+            deliberation=deliberation,
             total_tokens=sum(r.tokens for r in reports),
         ),
     }
 
 
-def run_council(brief: dict, seats: dict[str, str] | None = None) -> CouncilResult:
-    """Run the three-round council for a brief (batch — returns the result).
+def run_council(
+    brief: dict, seats: dict[str, str] | None = None, rounds: int = 2
+) -> CouncilResult:
+    """Run the council for a brief (batch — returns the result).
 
-    ``seats`` maps role key → provider; defaults to ``DEFAULT_SEATS``. Works
-    fully against the mock adapter, so it is callable without any provider keys.
+    ``seats`` maps role key → provider; defaults to ``DEFAULT_SEATS``. ``rounds``
+    is the number of debate rounds after the opening reports (default 2: a
+    rebuttal + a reply). Works fully against the mock adapter, so it is callable
+    without any provider keys.
     """
     result: CouncilResult | None = None
-    for event in run_council_events(brief, seats):
+    for event in run_council_events(brief, seats, rounds):
         if event["type"] == "done":
             result = event["result"]
     assert result is not None  # the generator always yields a terminal "done"

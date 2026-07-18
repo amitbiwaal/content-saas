@@ -20,13 +20,40 @@ from sqlalchemy.orm import Session
 from app.council import run_council
 from app.council.roles import DEFAULT_SEATS
 from app.db import get_db
-from app.models import AgentRun, Debate, Decision, Draft, Project, Research
+from app.models import (
+    AgentRun,
+    Debate,
+    DebateTurn,
+    Decision,
+    Draft,
+    Project,
+    Research,
+    User,
+)
 from app.providers import ProviderError, get_adapter
 from app.review import touch_stage
 from app.schemas import DecisionOut, ProjectCreate, ProjectOut
+from app.security import get_current_user
 
-router = APIRouter(prefix="/api/projects", tags=["projects"])
+# Every project route requires a logged-in user (all are fetch/XHR calls that
+# carry the Bearer token; the SSE stream + <img>/<a> download routes live in other
+# routers and handle auth separately). Handlers that need the user object declare
+# ``Depends(get_current_user)`` too — FastAPI dedupes it within a request.
+router = APIRouter(
+    prefix="/api/projects",
+    tags=["projects"],
+    dependencies=[Depends(get_current_user)],
+)
 logger = logging.getLogger("contentos.projects")
+
+
+def owned_project(project_id: str, db: Session, user: User) -> Project:
+    """Fetch a project and 404 unless the current user owns it (or it is
+    pre-auth/unowned, so legacy rows stay reachable)."""
+    project = db.get(Project, project_id)
+    if project is None or (project.owner_id is not None and project.owner_id != user.id):
+        raise HTTPException(status_code=404, detail="project not found")
+    return project
 
 # Valid Judge decision labels (PRD §8.3) — used to validate human overrides.
 _DECISION_LABELS = {
@@ -124,8 +151,13 @@ def extract_brief(message: str) -> dict:
 
 
 @router.post("", response_model=ProjectOut, status_code=201)
-def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Project:
+def create_project(
+    payload: ProjectCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
     project = Project(
+        owner_id=user.id,
         website=payload.website,
         topic=payload.topic,
         keyword=payload.keyword,
@@ -133,6 +165,8 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Pro
         audience=payload.audience,
         tone=payload.tone,
         goal=payload.goal,
+        article_type=payload.article_type,
+        word_count=payload.word_count,
         council_config=payload.council_config,
         stage="research",
     )
@@ -143,7 +177,11 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)) -> Pro
 
 
 @router.post("/from-message", response_model=ProjectOut, status_code=201)
-def create_from_message(payload: MessageIn, db: Session = Depends(get_db)) -> Project:
+def create_from_message(
+    payload: MessageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
     """Create a project from a free-text chat message (guided chat entry point).
 
     The first chat turn seeds a content brief; the client then streams the
@@ -151,6 +189,7 @@ def create_from_message(payload: MessageIn, db: Session = Depends(get_db)) -> Pr
     """
     brief = extract_brief(payload.message)
     project = Project(
+        owner_id=user.id,
         website=brief["website"],
         topic=brief["topic"],
         keyword=brief["keyword"],
@@ -168,12 +207,14 @@ def create_from_message(payload: MessageIn, db: Session = Depends(get_db)) -> Pr
 @router.get("", response_model=list[ProjectOut])
 def list_projects(
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
 ) -> list[Project]:
     return list(
         db.scalars(
             select(Project)
+            .where(Project.owner_id == user.id)
             .order_by(Project.created_at.desc())
             .limit(limit)
             .offset(offset)
@@ -182,11 +223,12 @@ def list_projects(
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
-def get_project(project_id: str, db: Session = Depends(get_db)) -> Project:
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="project not found")
-    return project
+def get_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Project:
+    return owned_project(project_id, db, user)
 
 
 @router.post("/{project_id}/council", response_model=list[DecisionOut])
@@ -210,6 +252,7 @@ def run_project_council(
     # Clean re-run: drop prior council artifacts for this project (FR-5.5).
     db.execute(delete(AgentRun).where(AgentRun.project_id == project_id))
     db.execute(delete(Debate).where(Debate.project_id == project_id))
+    db.execute(delete(DebateTurn).where(DebateTurn.project_id == project_id))
     db.execute(delete(Decision).where(Decision.project_id == project_id))
 
     research = db.scalars(
@@ -266,6 +309,53 @@ def run_project_council(
             conflicts=result.conflicts,
         )
     )
+
+    # Threaded transcript: opening positions, then every debate turn, then the
+    # Judge's deliberation — one DebateTurn row each, in order (matches the
+    # streaming pipeline so both paths replay identically).
+    seq = 0
+    for report in result.reports:
+        db.add(
+            DebateTurn(
+                project_id=project.id,
+                seq=seq,
+                round=1,
+                seat_role=report.role,
+                provider=report.provider,
+                model=report.model,
+                stance="open",
+                text="\n".join(f"• {rec}" for rec in report.recommendations),
+                confidence=report.confidence,
+            )
+        )
+        seq += 1
+    max_round = 1
+    for turn in result.turns:
+        max_round = max(max_round, turn.get("round", 2))
+        db.add(
+            DebateTurn(
+                project_id=project.id,
+                seq=seq,
+                round=turn.get("round", 2),
+                seat_role=turn["role"],
+                provider=turn.get("provider", ""),
+                addressed_to=turn.get("addressed_to"),
+                stance=turn.get("stance", "reply"),
+                text=turn.get("text", ""),
+            )
+        )
+        seq += 1
+    if result.deliberation:
+        db.add(
+            DebateTurn(
+                project_id=project.id,
+                seq=seq,
+                round=max_round + 1,
+                seat_role="judge",
+                stance="verdict",
+                text=result.deliberation,
+            )
+        )
 
     decisions: list[Decision] = []
     for d in result.decisions:
@@ -390,7 +480,13 @@ def list_decisions(project_id: str, db: Session = Depends(get_db)) -> list[Decis
 
 @router.get("/{project_id}/debate")
 def get_debate(project_id: str, db: Session = Depends(get_db)) -> dict:
-    """Latest debate transcript + the agent reports (PRD §5.1/5.2)."""
+    """Latest debate transcript + the agent reports (PRD §5.1/5.2).
+
+    ``turns`` is the threaded, replayable transcript (openings → pairwise
+    rebuttals/replies → Judge deliberation), ordered by ``seq`` so a client that
+    reloads mid/after a run can re-render the whole debate. ``messages`` /
+    ``conflicts`` remain for back-compat.
+    """
     if not db.get(Project, project_id):
         raise HTTPException(status_code=404, detail="project not found")
     debate = db.scalars(
@@ -405,9 +501,28 @@ def get_debate(project_id: str, db: Session = Depends(get_db)) -> dict:
             .order_by(AgentRun.created_at)
         )
     )
+    turns = list(
+        db.scalars(
+            select(DebateTurn)
+            .where(DebateTurn.project_id == project_id)
+            .order_by(DebateTurn.seq)
+        )
+    )
     return {
         "messages": debate.messages if debate else [],
         "conflicts": debate.conflicts if debate else [],
+        "turns": [
+            {
+                "round": t.round,
+                "role": t.seat_role,
+                "provider": t.provider,
+                "addressed_to": t.addressed_to,
+                "stance": t.stance,
+                "text": t.text,
+                "confidence": t.confidence,
+            }
+            for t in turns
+        ],
         "reports": [
             {
                 "role": r.role,

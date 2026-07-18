@@ -4,21 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { LANGS, useLang } from "../lib/i18n";
-import type { Integrations, Project } from "../lib/types";
-
-// Account identity — env-driven so no personal email is hardcoded in the shipped
-// bundle. Set NEXT_PUBLIC_APP_USER_NAME / _EMAIL to populate (falls back to a
-// neutral label). Real per-user identity awaits an auth/session layer.
-const USER_NAME = process.env.NEXT_PUBLIC_APP_USER_NAME || "Account";
-const USER_EMAIL = process.env.NEXT_PUBLIC_APP_USER_EMAIL || "";
-// Credits/usage + plans are presentation-only for now (no billing backend yet).
-const CREDITS = { remaining: 1240, total: 2000 };
-const PLANS = [
-  { name: "Free", price: "$0", credits: "500 credits / mo", features: ["1 active project", "Mock providers", "Markdown export"], cta: "Current plan", current: true },
-  { name: "Pro", price: "$29", credits: "5,000 credits / mo", features: ["Unlimited projects", "Live AI provider keys", "WordPress publishing", "Priority council"], cta: "Upgrade to Pro", popular: true },
-  { name: "Business", price: "$99", credits: "25,000 credits / mo", features: ["Everything in Pro", "Team seats", "Custom house rules", "API access"], cta: "Upgrade to Business" },
-];
+import { getToken, logout as doLogout, redirectToLogin, type AuthUser } from "../lib/auth";
+import { useLang } from "../lib/i18n";
+import type { Project } from "../lib/types";
+import { PAYMENTS_ENABLED, PLANS } from "../lib/pricing";
+import ThemeToggle from "./ThemeToggle";
 
 // --- Inline icons (Lucide/Feather style; inherit color via currentColor) ----
 const svg = {
@@ -77,17 +67,11 @@ function Icon({ name }: { name: string }) {
           <path d="M12 5v14M5 12h14" />
         </svg>
       );
-    case "sun":
+    case "shield":
       return (
         <svg {...svg}>
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-        </svg>
-      );
-    case "moon":
-      return (
-        <svg {...svg}>
-          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          <path d="M12 3l7 3v5c0 4.4-2.9 8.2-7 9.5C7.9 19.2 5 15.4 5 11V6l7-3Z" />
+          <path d="M9.2 12l1.8 1.8L15 9.8" />
         </svg>
       );
     default:
@@ -116,15 +100,11 @@ export default function Shell({
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [recent, setRecent] = useState<Project[]>([]);
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [userOpen, setUserOpen] = useState(false);
-  const [integ, setInteg] = useState<Integrations | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const userRef = useRef<HTMLDivElement>(null);
-  const [langOpen, setLangOpen] = useState(false);
-  const langRef = useRef<HTMLDivElement>(null);
-  const { lang, setLang, t } = useLang();
-  const currentLang = LANGS.find((l) => l.code === lang) ?? LANGS[0];
+  const { t } = useLang();
 
   // Close the account menu on an outside click or Escape (standard dropdown UX).
   useEffect(() => {
@@ -143,41 +123,29 @@ export default function Shell({
     };
   }, [userOpen]);
 
-  // Same close-on-outside-click for the language menu.
-  useEffect(() => {
-    if (!langOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (langRef.current && !langRef.current.contains(e.target as Node)) setLangOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setLangOpen(false); };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [langOpen]);
-
   useEffect(() => {
     setCollapsed(localStorage.getItem("sidebarCollapsed") === "1");
-    setTheme(localStorage.getItem("theme") === "light" ? "light" : "dark");
-    api.getIntegrations().then(setInteg).catch(() => {});
+    // Auth gate: no token => straight to sign-in. Otherwise load the account
+    // (name, email, credit balance) and refresh it when a run charges credits.
+    if (!getToken()) {
+      redirectToLogin();
+      return;
+    }
+    const load = () => api.auth.me().then(setUser).catch(() => {});
+    load();
+    const onCredits = () => load();
+    window.addEventListener("credits:changed", onCredits);
+    return () => window.removeEventListener("credits:changed", onCredits);
   }, []);
 
-  const usedPct = Math.round(((CREDITS.total - CREDITS.remaining) / CREDITS.total) * 100);
-  const wpConnected = !!integ?.wordpress.configured;
+  const credits = user?.credits ?? 0;
+  const displayName = user?.name || user?.email || "Account";
+  const displayEmail = user?.email || "";
+  const wpConnected = !!user?.has_wordpress;
+  // The WordPress connect shortcut is a per-user setting; keep it off the admin
+  // pages, which are for managing other accounts (it still lives in Settings).
+  const onAdmin = pathname === "/admin" || pathname.startsWith("/admin/");
 
-  function toggleTheme() {
-    const root = document.documentElement;
-    root.classList.add("theme-anim");
-    window.setTimeout(() => root.classList.remove("theme-anim"), 420);
-    setTheme((t) => {
-      const next = t === "dark" ? "light" : "dark";
-      localStorage.setItem("theme", next);
-      root.setAttribute("data-theme", next);
-      return next;
-    });
-  }
   useEffect(() => {
     api.listProjects().then((p) => setRecent(p.slice(0, 8))).catch(() => {});
   }, [pathname]);
@@ -191,13 +159,7 @@ export default function Shell({
 
   function logout() {
     setUserOpen(false);
-    // No auth backend yet — clear local session-ish state and return home.
-    try {
-      localStorage.removeItem("sidebarCollapsed");
-    } catch {
-      /* ignore */
-    }
-    window.location.href = "/";
+    doLogout(); // clears the token and redirects to /login
   }
 
   return (
@@ -231,6 +193,17 @@ export default function Shell({
               </Link>
             );
           })}
+          {user?.is_admin && (
+            <Link
+              href="/admin"
+              className={`nav-item ${pathname === "/admin" || pathname.startsWith("/admin/") ? "active" : ""}`}
+              onClick={() => setMobileOpen(false)}
+              title={t("Admin")}
+            >
+              <span className="nav-icon"><Icon name="shield" /></span>
+              <span className="brand-full">{t("Admin")}</span>
+            </Link>
+          )}
         </nav>
 
         {recent.length > 0 && (
@@ -252,13 +225,15 @@ export default function Shell({
         )}
 
         <div className="side-bottom">
-        <div className="side-billing brand-full">
-          <Link href="/settings" className="wp-connect" onClick={() => setMobileOpen(false)}>
-            <span className={`wp-dot ${wpConnected ? "on" : ""}`} />
-            <span className="wp-connect-text">{wpConnected ? t("WordPress connected") : t("Connect WordPress")}</span>
-            <span className="wp-chevron">›</span>
-          </Link>
-        </div>
+        {!onAdmin && (
+          <div className="side-billing brand-full">
+            <Link href="/settings" className="wp-connect" onClick={() => setMobileOpen(false)}>
+              <span className={`wp-dot ${wpConnected ? "on" : ""}`} />
+              <span className="wp-connect-text">{wpConnected ? t("WordPress connected") : t("Connect WordPress")}</span>
+              <span className="wp-chevron">›</span>
+            </Link>
+          </div>
+        )}
 
         <div className="side-foot">
           <button className="collapse-btn" onClick={toggleCollapse} title="Collapse sidebar">
@@ -277,47 +252,23 @@ export default function Shell({
 
           <div className="topbar-right">
             {status}
-            <div className="hdr-credits" title={`${usedPct}% of ${CREDITS.total.toLocaleString()} used this month`}>
-              <span className="hdr-credits-num">{CREDITS.remaining.toLocaleString()}</span>
+            <Link href="/settings" className="hdr-credits" title={t("Credits remaining")}>
+              <span className="hdr-credits-num">{credits.toLocaleString("en-US")}</span>
               <span className="hdr-credits-label">{t("credits left")}</span>
-            </div>
+            </Link>
             <button className="hdr-upgrade" onClick={() => setUpgradeOpen(true)}>⚡ {t("Upgrade")}</button>
 
-            {/* Language selector */}
-            <div className="user-box hdr-lang" ref={langRef}>
-              <button className={`hdr-lang-btn ${langOpen ? "open" : ""}`} onClick={() => setLangOpen((o) => !o)} title={t("Language")} aria-label={t("Language")}>
-                <span className="hdr-lang-flag">{currentLang.flag}</span>
-                <span className="hdr-lang-code">{currentLang.code.toUpperCase()}</span>
-              </button>
-              {langOpen && (
-                <div className="user-menu hdr-lang-menu">
-                  <div className="user-menu-email">{t("Language")}</div>
-                  {LANGS.map((l) => (
-                    <button
-                      key={l.code}
-                      className={`user-menu-item ${l.code === lang ? "lang-active" : ""}`}
-                      onClick={() => { setLang(l.code); setLangOpen(false); }}
-                    >
-                      <span className="hdr-lang-flag">{l.flag}</span> {l.label}{l.code === lang ? "  ✓" : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <button className="hdr-icon-btn" onClick={toggleTheme} title="Toggle light / dark" aria-label="Toggle theme">
-              <Icon name={theme === "dark" ? "sun" : "moon"} />
-            </button>
+            <ThemeToggle />
 
             <div className="user-box hdr-user" ref={userRef}>
               <button className={`user-btn ${userOpen ? "open" : ""}`} onClick={() => setUserOpen((o) => !o)} title="Account">
-                <span className="user-avatar">{USER_NAME.charAt(0).toUpperCase()}</span>
-                <span className="hdr-user-name">{USER_NAME}</span>
+                <span className="user-avatar">{displayName.charAt(0).toUpperCase()}</span>
+                <span className="hdr-user-name">{displayName}</span>
                 <span className="user-caret" aria-hidden="true">⌃</span>
               </button>
               {userOpen && (
                 <div className="user-menu">
-                  {USER_EMAIL && <div className="user-menu-email">{USER_EMAIL}</div>}
+                  {displayEmail && <div className="user-menu-email">{displayEmail}</div>}
                   <Link href="/settings" className="user-menu-item" onClick={() => setUserOpen(false)}>{t("Settings")}</Link>
                   <Link href="/dashboard" className="user-menu-item" onClick={() => setUserOpen(false)}>{t("Dashboard")}</Link>
                   <button className="user-menu-item danger" onClick={logout}>{t("Log out")}</button>
@@ -335,21 +286,33 @@ export default function Shell({
             <div className="pricing-head">
               <div>
                 <h3>{t("Upgrade your plan")}</h3>
-                <p className="muted small">{t("You have")} {CREDITS.remaining.toLocaleString()} {t("of")} {CREDITS.total.toLocaleString()} {t("credits left this month.")}</p>
+                <p className="muted small">
+                  {t("You have")} {credits.toLocaleString("en-US")} {t("credits left.")}
+                  {!PAYMENTS_ENABLED && <> · {t("Self-serve upgrades are coming soon.")}</>}
+                </p>
               </div>
               <button className="pricing-close" onClick={() => setUpgradeOpen(false)} aria-label={t("Close")}>✕</button>
             </div>
             <div className="pricing-grid">
-              {PLANS.map((p) => (
-                <div key={p.name} className={`plan ${p.popular ? "popular" : ""}`}>
-                  {p.popular && <span className="plan-badge">{t("Most popular")}</span>}
-                  <div className="plan-name">{t(p.name)}</div>
-                  <div className="plan-price">{p.price}<span>{t("/mo")}</span></div>
-                  <div className="plan-credits">{t(p.credits)}</div>
-                  <ul className="plan-features">{p.features.map((f) => <li key={f}>{t(f)}</li>)}</ul>
-                  <button className={`plan-cta ${p.popular ? "btn btn-primary" : "btn"}`} disabled={p.current}>{t(p.cta)}</button>
-                </div>
-              ))}
+              {PLANS.map((p) => {
+                const isCurrent = (user?.plan ?? "free") === p.id;
+                const soon = !PAYMENTS_ENABLED && p.monthly > 0 && !isCurrent;
+                return (
+                  <div key={p.id} className={`plan ${p.popular ? "popular" : ""} ${isCurrent ? "plan-current" : ""}`}>
+                    {p.popular && <span className="plan-badge">{t("Most popular")}</span>}
+                    <div className="plan-name">{t(p.name)}</div>
+                    <div className="plan-price">${p.monthly}<span>{t("/mo")}</span></div>
+                    <div className="plan-credits">{p.credits.toLocaleString("en-US")} {t("credits / mo")}</div>
+                    <ul className="plan-features">{p.features.map((f) => <li key={f}>{t(f)}</li>)}</ul>
+                    <button
+                      className={`plan-cta ${p.popular && !isCurrent && !soon ? "btn btn-primary" : "btn"}`}
+                      disabled={isCurrent || soon}
+                    >
+                      {isCurrent ? t("Current plan") : soon ? t("Coming soon") : t(p.cta)}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -67,14 +67,30 @@ JUDGE = Role(
     title="Judge Agent",
     axis="final decisions",
     system_prompt=(
-        "You are the Judge. Rule on each major recommendation from the council. "
-        "For every point output a label in "
+        "You are the Judge. You are given the full council transcript — every "
+        "seat's opening position AND the back-and-forth debate (rebuttals, "
+        "concessions, revisions) — plus your own deliberation. Rule on each major "
+        "recommendation. Reward points that survived the debate; reject ones a "
+        "rival refuted and the author conceded. For every point output a label in "
         "{accepted, rejected, needs_evidence, merge, manual_review} with a short "
         "reason a human can read. Reject unsupported, risky or off-intent claims; "
         "require citations for useful-but-unsourced points. Output strict JSON: "
         '{"summary": str, "decisions": [{"source": str, "point": str, '
         '"label": str, "reason": str}]}.'
     ),
+)
+
+# Round-3.5 — the Judge's human-readable deliberation, streamed live before the
+# strict-JSON verdict so the UI shows the Judge "thinking through" the debate
+# rather than a silent JSON blob appearing at the end (user ask: debate visible).
+JUDGE_DELIBERATION_PROMPT = (
+    "You are the Judge of an AI content council. Below is the FULL debate "
+    "transcript: each seat's opening recommendations, then the rounds where they "
+    "challenged each other and replied (defending, conceding or revising). In 3 "
+    "to 5 sentences, reason out loud about who made the strongest case, which "
+    "disagreements actually got resolved during the debate, and what the winning "
+    "strategy should be. Reference the seats by name. Write plain prose — no JSON, "
+    "no lists, no headings."
 )
 
 # All non-judge roles that produce Round-1 reports.

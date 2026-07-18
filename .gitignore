@@ -16,6 +16,8 @@ env/
 
 # Databases
 *.db
+*.db-wal
+*.db-shm
 *.sqlite3
 
 # Node / frontend
@@ -25,6 +27,7 @@ dist/
 .next/
 out/
 next-env.d.ts
+*.tsbuildinfo
 *.local
 
 # Editors / OS
@@ -35,3 +38,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# TS build cache
+*.tsbuildinfo

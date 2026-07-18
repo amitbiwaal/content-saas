@@ -6,13 +6,13 @@ export type StageStatus = "pending" | "running" | "done";
 
 export const PIPELINE_STAGES: { key: string; label: string }[] = [
   { key: "research", label: "Research" },
-  { key: "council", label: "Council" },
+  { key: "council", label: "AI experts" },
   { key: "outline", label: "Outline" },
-  { key: "article", label: "Article" },
+  { key: "article", label: "Draft" },
   { key: "factcheck", label: "Fact-check" },
   { key: "scoring", label: "Scoring" },
-  { key: "gate", label: "Gate" },
-  { key: "compliance", label: "Compliance" },
+  { key: "gate", label: "Publish check" },
+  { key: "compliance", label: "Policy check" },
 ];
 
 export default function PipelineStepper({

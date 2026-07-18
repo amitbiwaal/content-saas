@@ -11,12 +11,11 @@ const isDev = process.env.NODE_ENV !== "production";
 const nextConfig = {
   // Hide the floating dev-tools indicator for a clean UI while developing.
   devIndicators: false,
-  // Dev BFF: proxy API + health to FastAPI so the browser uses relative paths
-  // and never sees the backend origin directly. Swap for Next route handlers
-  // (app/api/**) once auth/session is added.
+  // /api/* is proxied by a server-side Route Handler (app/api/[...path]/route.ts)
+  // that injects the X-API-Key so the prod auth gate is satisfied — a rewrite
+  // cannot add a request header. Only /health (public, keyless) stays a rewrite.
   async rewrites() {
     return [
-      { source: "/api/:path*", destination: `${BACKEND}/api/:path*` },
       { source: "/health", destination: `${BACKEND}/health` },
     ];
   },
@@ -35,15 +34,16 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              // Backend API + (dev only) the HMR websocket.
-              `connect-src 'self' ${BACKEND}${isDev ? " ws://localhost:3000 ws://127.0.0.1:3000" : ""}`,
-              "img-src 'self' data:",
-              // Google Fonts: the Sora stylesheet (@import in globals.css) +
-              // the font files it pulls from gstatic.
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              // Backend API + (dev only) the HMR websocket + Google Sign-In.
+              `connect-src 'self' ${BACKEND} https://accounts.google.com${isDev ? " ws://localhost:3000 ws://127.0.0.1:3000" : ""}`,
+              "img-src 'self' data: https://*.googleusercontent.com",
+              // Google Fonts + Google Sign-In injected styles.
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com",
               "font-src 'self' https://fonts.gstatic.com",
-              // Next dev needs 'unsafe-eval' for HMR/Fast Refresh; prod stays strict.
-              `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+              // Next dev needs 'unsafe-eval'; Google Sign-In (GIS) loads gsi/client.
+              `script-src 'self' 'unsafe-inline' https://accounts.google.com${isDev ? " 'unsafe-eval'" : ""}`,
+              // GIS renders its button/one-tap in a Google-hosted iframe.
+              "frame-src https://accounts.google.com",
               "frame-ancestors 'none'",
               "base-uri 'self'",
             ].join("; "),

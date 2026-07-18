@@ -24,6 +24,9 @@ class ProjectCreate(BaseModel):
     audience: str | None = None
     tone: str | None = None
     goal: str | None = None
+    # Desired article format (e.g. "How-to", "Listicle") and target body length.
+    article_type: str | None = None
+    word_count: int | None = Field(default=None, ge=100, le=10000)
     # Optional seat->provider overrides for this project (FR-3.2).
     council_config: dict | None = None
 
@@ -39,6 +42,8 @@ class ProjectOut(BaseModel):
     audience: str | None
     tone: str | None
     goal: str | None
+    article_type: str | None = None
+    word_count: int | None = None
     stage: str
     council_config: dict | None
     # Per-stage human approval state for review mode (None in auto mode).

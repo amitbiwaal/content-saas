@@ -14,15 +14,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // The pre-hydration script below sets html lang/dir (and data-theme) before
-    // React hydrates, so those attributes intentionally differ from the server
-    // render — suppress the (expected) hydration warning for this element.
+    // The pre-hydration script applies the saved theme before React hydrates, so
+    // data-theme intentionally differs from the server render — suppress the
+    // (expected) hydration warning for this element.
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{var t=localStorage.getItem('theme');if(t==='light')document.documentElement.setAttribute('data-theme','light');var l=localStorage.getItem('lang');if(l){document.documentElement.lang=l;document.documentElement.dir=(l==='ar'||l==='he')?'rtl':'ltr';}}catch(e){}",
+              "try{if(localStorage.getItem('theme')==='light')document.documentElement.setAttribute('data-theme','light');}catch(e){}",
           }}
         />
         <div className="fx-particles" aria-hidden="true" />

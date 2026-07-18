@@ -49,6 +49,8 @@ def build_outline(
     *,
     judge_provider: str = "anthropic",
     feedback: str | None = None,
+    article_type: str | None = None,
+    target_words: int | None = None,
 ) -> dict:
     """Build an article outline from the approved strategy (PRD §6, FR-6.1..6.3).
 
@@ -68,7 +70,9 @@ def build_outline(
         well-formed, non-empty outline — never raises on provider failure.
     """
     keyword = _research_keyword(research, strategy_summary)
-    prompt = _build_prompt(strategy_summary, decisions, research, feedback)
+    prompt = _build_prompt(
+        strategy_summary, decisions, research, feedback, article_type, target_words
+    )
 
     try:
         resp = get_adapter(judge_provider).complete(
@@ -135,6 +139,8 @@ def _build_prompt(
     decisions: list[dict],
     research: dict,
     feedback: str | None = None,
+    article_type: str | None = None,
+    target_words: int | None = None,
 ) -> str:
     accepted = [
         d.get("point", "")
@@ -153,6 +159,20 @@ def _build_prompt(
         "Build the outline from this approved strategy and research.\n"
         + json.dumps(payload)[:6000]
     )
+    atype = (article_type or "").strip()
+    if atype:
+        prompt += (
+            f"\n\nARTICLE FORMAT: {atype}. Shape the heading structure to match a "
+            f"'{atype}' (e.g. a Listicle uses numbered item H2s; a How-to uses "
+            f"ordered step H2s; a Comparison/Versus uses per-option sections + a table)."
+        )
+    if isinstance(target_words, int) and target_words > 0:
+        # ~200 words of body per H2 is a reasonable planning heuristic.
+        secs = max(3, min(12, round(target_words / 200)))
+        prompt += (
+            f"\n\nTARGET LENGTH: about {target_words} words — plan roughly {secs} "
+            f"body sections (H2s) so the article reaches that depth without padding."
+        )
     fb = (feedback or "").strip()
     if fb:
         prompt += (

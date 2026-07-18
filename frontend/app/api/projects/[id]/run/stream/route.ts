@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 const BACKEND = process.env.BACKEND_ORIGIN ?? "http://127.0.0.1:8000";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -21,8 +21,12 @@ export async function GET(
   // without ever exposing the key to the browser.
   if (process.env.API_KEY) headers["X-API-Key"] = process.env.API_KEY;
 
+  // Forward the run params (?gated=1, ?from=<stage>) so gated review and
+  // resume-after-approval work in prod, where EventSource hits this route
+  // instead of connecting straight to the backend.
+  const search = new URL(req.url).search;
   const upstream = await fetch(
-    `${BACKEND}/api/projects/${encodeURIComponent(id)}/run/stream`,
+    `${BACKEND}/api/projects/${encodeURIComponent(id)}/run/stream${search}`,
     { headers, cache: "no-store" },
   );
 
