@@ -1,0 +1,80 @@
+# Render Blueprint — one-click deploy of the whole stack (Postgres + FastAPI + Next.js).
+#
+# In Render:  New → Blueprint  →  connect the amitbiwaal/content-saas repo  →  Apply.
+# JWT_SECRET and API_KEY are auto-generated; API_KEY is shared to the frontend
+# automatically. Fill the `sync: false` values in the dashboard (marked below),
+# and after the first deploy set the three cross-URLs once the *.onrender.com
+# addresses exist.
+#
+# Note: keep all three in the same region. If a `plan: free` value errors on
+# apply, change it to `starter` (or pick a plan in the dashboard).
+
+databases:
+  - name: contentos-db
+    databaseName: contentos
+    plan: free
+
+services:
+  # --- Backend: FastAPI (Python 3.12 via backend/.python-version) ---
+  - type: web
+    name: contentos-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # Migrations run before the server starts (idempotent) — no separate release
+    # phase needed, works on every Render tier.
+    startCommand: alembic upgrade head && gunicorn app.main:app -c gunicorn.conf.py
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: prod
+      - key: WEB_CONCURRENCY        # single worker for seamless SSE run reconnect
+        value: "1"
+      - key: DATABASE_URL           # auto-wired; app upgrades it to psycopg3
+        fromDatabase:
+          name: contentos-db
+          property: connectionString
+      - key: JWT_SECRET             # auto-generated
+        generateValue: true
+      - key: API_KEY                # auto-generated (shared to the frontend below)
+        generateValue: true
+      # --- set these in the dashboard ---
+      - key: ADMIN_EMAILS
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      # --- set AFTER the first deploy, once the URLs exist ---
+      - key: CORS_ORIGINS           # https://contentos-web.onrender.com
+        sync: false
+      - key: ALLOWED_HOSTS          # contentos-api.onrender.com
+        sync: false
+      # --- optional AI provider keys (blank => deterministic mock) ---
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: XAI_API_KEY
+        sync: false
+
+  # --- Frontend: Next.js (Node) ---
+  - type: web
+    name: contentos-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: API_KEY               # auto-matched to the backend's generated key
+        fromService:
+          type: web
+          name: contentos-api
+          envVarKey: API_KEY
+      - key: NEXT_PUBLIC_GOOGLE_CLIENT_ID
+        sync: false
+      # --- set AFTER the first deploy, once the backend URL exists ---
+      - key: BACKEND_ORIGIN         # https://contentos-api.onrender.com
+        sync: false
