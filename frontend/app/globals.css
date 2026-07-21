@@ -6401,7 +6401,9 @@ a.row:hover { transform: translateX(2px); }
    the panel leaves between the logo and the pitch, instead of just pushing that
    gap further down. */
 .auth-vis { margin: auto 0; display: flex; justify-content: center; }
-.auth-vis-svg { width: 100%; max-width: 400px; height: auto; }
+/* Nudge the diagram left so it lines up closer to the left-aligned headline and
+   feature list below it, instead of floating centred in the wide brand panel. */
+.auth-vis-svg { width: 100%; max-width: 400px; height: auto; transform: translateX(-44px); }
 /* dashes drift along the wires: the council feeding the Judge */
 .auth-vis-wires path {
   stroke-dasharray: 5 7;
