@@ -22,7 +22,10 @@ from app.providers.base import (
     StreamEvent,
 )
 
-_DEFAULT_MODEL = "gpt-5"
+# gpt-4o is the default: excellent long-form content quality with fast, reliable
+# latency across a many-section draft. gpt-5 / o-series are far slower and can
+# time out the pipeline; set OPENAI_MODEL to override for max-quality single runs.
+_DEFAULT_MODEL = "gpt-4o"
 
 # Substrings that signal a content-policy refusal in an OpenAI error/finish.
 _REFUSAL_MARKERS = (

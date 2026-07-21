@@ -54,10 +54,10 @@ REGISTRY: dict[str, ModelInfo] = {
     # cost tracking (PRD §13) and budget guards silently under-report real spend.
     "openai": ModelInfo(
         provider="openai",
-        model="gpt-5",  # placeholder — confirm on key supply
-        context_window=400_000,
-        input_cost_cents_per_mtok=125.0,   # ~$1.25 / 1M in (approx — confirm)
-        output_cost_cents_per_mtok=1000.0,  # ~$10.00 / 1M out (approx — confirm)
+        model="gpt-4o",  # best quality/latency balance for long-form content
+        context_window=128_000,
+        input_cost_cents_per_mtok=250.0,    # $2.50 / 1M in (gpt-4o)
+        output_cost_cents_per_mtok=1000.0,  # $10.00 / 1M out (gpt-4o)
         policy_tier=PolicyTier.MAINSTREAM,
     ),
     "google": ModelInfo(
