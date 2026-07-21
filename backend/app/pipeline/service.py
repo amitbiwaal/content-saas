@@ -461,7 +461,10 @@ def stream_full_pipeline(
         outline_payload = build_outline(
             strategy_summary,
             council_decisions,
-            research_norm,
+            # Carry the brief's keyword/topic so the outline titles the article
+            # after the subject (not the strategy summary) — research_norm itself
+            # doesn't include them.
+            {**research_norm, "keyword": project.keyword, "topic": project.topic},
             feedback=_stage_feedback(project, "outline"),
             article_type=project.article_type,
             target_words=project.word_count,

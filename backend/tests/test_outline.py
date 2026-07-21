@@ -80,12 +80,24 @@ def test_heuristic_fallback_with_empty_inputs():
     assert "FAQPage" in hook_types
 
 
-def test_sections_derive_from_accepted_decisions():
-    """Accepted/merge points become H2 sections; rejected points are excluded."""
-    out = build_outline("strategy", SYNTHETIC_DECISIONS, SYNTHETIC_RESEARCH)
+def test_sections_use_research_topics_not_editorial_directives():
+    """Sections come from reader-facing research topics + non-directive council
+    points; editorial/SEO directives are filtered out (regression: the draft used
+    to render 'Strengthen E-E-A-T' / 'Build an FAQ' as literal H2 headings)."""
+    decisions = SYNTHETIC_DECISIONS + [
+        {"source": "search_intelligence", "point": "Strengthen E-E-A-T and optimize for AI answers", "label": "accepted", "reason": "seo"},
+        {"source": "content_strategist", "point": "Enrich entities and schema", "label": "merge", "reason": "aeo"},
+    ]
+    out = build_outline("strategy", decisions, SYNTHETIC_RESEARCH)
     heading_texts = [n["text"].lower() for n in out["nodes"]]
     joined = " | ".join(heading_texts)
-    assert "compare feetfinder fees vs competitors" in joined or "compare feetfinder fees" in joined
+    # Reader-facing research headings drive the outline.
+    assert "pricing and fees" in joined
+    # A non-directive council topic is still allowed through.
+    assert "compare feetfinder fees" in joined
+    # Editorial/SEO directives must NOT become headings.
+    assert all("strengthen" not in t and "e-e-a-t" not in t for t in heading_texts)
+    assert all(not t.startswith("enrich") for t in heading_texts)
     # The rejected superlatives point must NOT become a section.
     assert all("superlative" not in t for t in heading_texts)
 

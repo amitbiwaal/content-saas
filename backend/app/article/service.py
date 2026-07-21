@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 
 from app.compliance.autofix import autofix_text
+from app.outline.service import is_directive_heading
 from app.providers import ProviderError, ProviderRefusal, get_adapter
 
 # Roughly the number of words the heuristic fallback emits per body section, kept
@@ -39,17 +40,27 @@ _MAX_SECTION_WORKERS = 4
 SYSTEM_PROMPT = (
     "You are a senior content writer for ContentOS AI (PRD §7). Write ONE section "
     "of an article in Markdown body prose for the given heading.\n"
+    "TOPIC: the heading names a reader-facing subject. Write ABOUT that subject for "
+    "the reader. NEVER restate the heading as an instruction and NEVER write "
+    "meta-commentary about SEO, structure, entities, schema, E-E-A-T, keywords or "
+    "'this guide'. Write the actual subject content a reader came for.\n"
     "VOICE: natural, human, 'we-not-I'. Vary sentence length and rhythm. Use "
-    "concrete, verifiable specifics (names, figures, steps, real examples) — never "
+    "concrete, verifiable specifics (names, figures, steps, real examples), never "
     "vague filler. Write like an expert who has used the thing, not a summary.\n"
-    "BANNED phrases (they read as generic AI copy — never use any): 'in conclusion', "
+    "BANNED phrases (they read as generic AI copy, never use any): 'in conclusion', "
     "'it's important to note', 'in today's world', 'when it comes to', 'a wide range "
     "of', 'plays a crucial role', 'navigating the', 'in the realm of'. Never use "
     "em-dashes; use commas or periods.\n"
-    "SOURCING: ground every factual or statistical claim in one of the provided "
-    "research sources and attribute it inline (e.g. 'according to <source name>'). "
-    "Never invent statistics — if a number is not backed by a source, omit it or "
-    "state it qualitatively. No unsupported superlatives ('best', 'guaranteed').\n"
+    "SOURCING: you may cite ONLY the exact sources listed under 'Research sources "
+    "you may cite', by their given title/URL copied verbatim. NEVER invent, guess, "
+    "complete or 'fix' a URL, domain, vendor-doc page or source name; a URL not in "
+    "that list does not exist for you. Do NOT attach a citation to every sentence: "
+    "cite only a specific fact, figure or quote that genuinely comes from a listed "
+    "source, at most once per paragraph, and never lean on one source or repeat the "
+    "same 'according to X' on consecutive sentences. If no listed source supports a "
+    "claim, state it plainly with no citation. If the sources list says none were "
+    "supplied, write from general knowledge and cite nothing. Never invent "
+    "statistics. No unsupported superlatives ('best', 'guaranteed').\n"
     "SEO: weave in the primary keyword and the listed entities naturally.\n"
     "Return ONLY the body for this section (no heading line). If you reply as JSON, "
     "use the shape {\"markdown\": str}."
@@ -142,8 +153,16 @@ def _flatten_nodes(nodes: list) -> list[dict]:
             heading = _node_heading(item)
             level = _node_level(item)
             kids = _children(item)
-            if level >= 2:
+            # Final guard: an editorial/SEO directive must never become a section
+            # heading (else the writer produces meta-commentary executing it). If
+            # every node were filtered, _extract_sections backstops with "Overview".
+            if level >= 2 and not is_directive_heading(heading):
                 flat.append({"heading": heading, "level": level, "node": item})
+            # A FAQ section writes its own Q&A from the research questions; don't
+            # ALSO flatten its question children into standalone body sections
+            # (that duplicated every question as a long section in the draft).
+            if _section_kind(heading) == "faq":
+                continue
             walk(kids)
 
     walk(nodes if isinstance(nodes, list) else [])
@@ -290,22 +309,30 @@ def _section_prompt(
             "verdict:'. Be specific and balanced (a real recommendation, not hedging)."
         ) + tail
     if kind == "faq":
-        questions = _research_paa(research) or [
-            f"Is {brief.get('keyword') or brief.get('topic')} worth it?",
-            "How much does it cost?",
-            "Is it safe to use?",
-            "What are the best alternatives?",
-        ]
-        joined = "\n".join(f"- {q}" for q in questions[:6])
+        questions = _research_paa(research)
+        if questions:
+            joined = "\n".join(f"- {q}" for q in questions[:6])
+            return context + (
+                "\nWrite an FAQ section. Answer each question below in 1 to 2 "
+                "sentences, citing a listed source only if one directly supports "
+                "the answer. If a question is awkwardly phrased, rewrite it into "
+                "natural, grammatical English before answering. Format each item as "
+                f"'**<question>**' on its own line, then the answer.\nQuestions:\n{joined}"
+            ) + tail
+        subject = brief.get("topic") or brief.get("keyword") or "the topic"
         return context + (
-            "\nWrite an FAQ section. Answer each question below in 1 to 2 sourced "
-            "sentences. Format each item as '**<question>**' on its own line, then "
-            f"the answer on the next line.\nQuestions:\n{joined}"
+            "\nWrite an FAQ section with 4 to 6 natural 'People Also Ask' style "
+            f"questions a reader would search about {subject}, then answer each in 1 "
+            "to 2 sentences. Phrase every question in correct, grammatical English "
+            "(never treat the keyword phrase as a singular product name). Format each "
+            "as '**<question>**' on its own line, then the answer on the next line."
         ) + tail
     return context + (
-        f"\nWrite the body for this section only, 3 to 5 tight paragraphs.\n"
+        f"\nWrite the body for this reader-facing section only, 3 to 5 tight "
+        f"paragraphs about the topic (not about SEO or how the article is built).\n"
         f"Section heading (H{level}): {heading}\n"
-        "Cite a research source inline for any factual or statistical claim."
+        "Cite a listed source only where a specific fact or figure genuinely comes "
+        "from it; most sentences need no citation."
     ) + tail
 
 

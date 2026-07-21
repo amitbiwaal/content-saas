@@ -28,15 +28,58 @@ _ELEMENT_TYPES = ("answer_block", "table", "faq", "image", "cta")
 
 _OUTLINE_SYSTEM = (
     "You are the Outline Builder. Turn the approved content strategy into a "
-    "publish-ready article skeleton. Convert the strategy into an H1/H2/H3 "
-    "heading tree (FR-6.1), mark where a Quick-Verdict answer block, comparison "
-    "table, FAQ, image and CTA belong (FR-6.2), and attach JSON-LD schema hooks "
-    "such as Article, FAQPage or HowTo (FR-6.3). Lead with a Quick-Verdict "
-    "answer block so the page is answer-engine ready. Output STRICT JSON only: "
+    "publish-ready article skeleton. Build an H1/H2/H3 heading tree (FR-6.1), mark "
+    "where a Quick-Verdict answer block, comparison table, FAQ, image and CTA "
+    "belong (FR-6.2), and attach JSON-LD schema hooks such as Article, FAQPage or "
+    "HowTo (FR-6.3). Lead with a Quick-Verdict answer block so the page is "
+    "answer-engine ready.\n"
+    "CRITICAL: section headings MUST be reader-facing TOPICS about the subject, "
+    "phrased for a reader (e.g. for standing desks: 'Adjustable height range and "
+    "presets', 'Cable management for dual monitors', 'Ergonomic setup'). The "
+    "'coverage_guidance' items are INTERNAL SEO/strategy instructions — use them to "
+    "decide WHAT to cover, but NEVER copy a directive as a heading and NEVER write a "
+    "heading that is an instruction (no 'Use...', 'Add...', 'Cover...', "
+    "'Optimize...', 'Strengthen E-E-A-T', 'Build an FAQ', 'Enrich entities', "
+    "'TL;DR', 'H1', 'schema'). A directive like 'add a comparison table' means MARK "
+    "a table element on a real topic section, not create a section titled that.\n"
+    "Output STRICT JSON only: "
     '{"nodes": [{"level": "H1|H2|H3", "text": str, "children": [...]}], '
     '"elements": [{"type": "answer_block|table|faq|image|cta", "section": str, '
     '"note": str}], "schema_hooks": [{"type": str, "target": str}]}.'
 )
+
+
+# --------------------------------------------------------------------------- #
+# Directive vs reader-facing heading detection
+# --------------------------------------------------------------------------- #
+# Council seats emit STRATEGY/SEO recommendations ("Strengthen E-E-A-T", "Build an
+# FAQ", "Optimise for AI answers"). Those are directives about HOW to write the
+# article — they must never become the article's reader-facing section headings.
+# These helpers keep directives out of the outline (and, imported by the writer,
+# out of the draft as a final guard).
+_DIRECTIVE_VERBS = (
+    "add", "build", "optimize", "optimise", "include", "strengthen", "enrich",
+    "ensure", "weave", "leverage", "open with", "lead with", "start with",
+)
+_SEO_JARGON = (
+    "e-e-a-t", "eeat", "e-a-t", "tl;dr", "json-ld", "faqpage", "answer block",
+    "answer engine", "ai answers", "ai engines",
+)
+
+
+def is_directive_heading(text: str) -> bool:
+    """True if ``text`` reads as an editorial/SEO directive, not a reader topic."""
+    low = " ".join(str(text).lower().split())
+    if not low:
+        return False
+    if any(low.startswith(v + " ") or low.startswith(v + ":") for v in _DIRECTIVE_VERBS):
+        return True
+    return any(j in low for j in _SEO_JARGON)
+
+
+def _is_reader_heading(text: str) -> bool:
+    """Usable reader-facing heading: non-empty and not an editorial directive."""
+    return bool(str(text).strip()) and not is_directive_heading(text)
 
 
 # --------------------------------------------------------------------------- #
@@ -149,9 +192,10 @@ def _build_prompt(
     ]
     payload = {
         "strategy_summary": strategy_summary,
-        "accepted_points": accepted,
-        "headings": (research.get("headings") or [])[:30],
-        "paa": (research.get("paa") or [])[:20],
+        # Internal SEO/strategy directives — decide WHAT to cover; NEVER a heading.
+        "coverage_guidance": accepted,
+        "reader_topics_competitors_cover": (research.get("headings") or [])[:30],
+        "reader_questions": (research.get("paa") or [])[:20],
         "entities": (research.get("entities") or [])[:30],
         "intent": research.get("intent"),
     }
@@ -403,21 +447,36 @@ def _heuristic_outline(
 # Heuristic helpers
 # --------------------------------------------------------------------------- #
 def _section_titles(decisions: list[dict], research: dict) -> list[str]:
-    accepted = [
+    """Reader-facing section topics — NOT the council's editorial directives.
+
+    Primary source is what top-ranking pages actually cover (research headings),
+    plus any accepted council points that read as real topics (a directive like
+    "Strengthen E-E-A-T" is filtered out; a topic like "Compare fees vs rivals"
+    is kept). Falls back to reader questions, then a generic skeleton.
+    """
+    headings = [h for h in _as_text_list(research.get("headings")) if _is_reader_heading(h)]
+    topical_points = [
         d.get("point", "")
         for d in decisions
-        if d.get("label") in ("accepted", "merge") and d.get("point")
+        if d.get("label") in ("accepted", "merge") and _is_reader_heading(d.get("point", ""))
     ]
-    if accepted:
-        return accepted
-    headings = [h for h in _as_text_list(research.get("headings")) if h]
-    if headings:
-        return headings[:8]
+    combined = headings + [p for p in topical_points if p]
+    if combined:
+        return combined[:10]
+    paa = [q.rstrip("?") for q in _as_text_list(research.get("paa")) if _is_reader_heading(q)]
+    if paa:
+        return paa[:8]
     return ["Overview", "How It Works", "Key Details"]
 
 
 def _heading_text(raw: str) -> str:
-    """Turn a decision sentence / heading into a concise Title-Case H2."""
+    """Turn a heading/topic into a concise H2; reject editorial directives.
+
+    Returns "" for a directive (the caller loop skips falsy headings), so a
+    directive that slipped past _section_titles can never become an H2.
+    """
+    if is_directive_heading(raw):
+        return ""
     text = re.sub(r"\s+", " ", str(raw)).strip().strip(".")
     # Take the leading clause before any colon/dash so headings stay short.
     text = re.split(r"[:\-–—]", text, maxsplit=1)[0].strip()

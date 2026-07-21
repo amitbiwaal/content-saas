@@ -27,9 +27,13 @@ _VALID_INTENTS = {"informational", "commercial", "transactional", "navigational"
 def test_mock_provider_produces_all_keys():
     data = MockResearchProvider().gather(BRIEF)
     assert _REQUIRED_KEYS <= set(data)
-    # FR-4.1/4.2: collections are non-empty lists.
-    for key in ("serp", "headings", "paa", "entities", "sources"):
+    # FR-4.1/4.2: content collections are non-empty lists.
+    for key in ("serp", "headings", "paa", "entities"):
         assert isinstance(data[key], list) and data[key], f"{key} should be a non-empty list"
+    # Sources are a list but intentionally EMPTY for the offline mock: it must not
+    # fabricate citable URLs (that leaked "according to Wikipedia" / fake vendor
+    # docs into drafts). Real providers overlay observed top-ranking domains.
+    assert isinstance(data["sources"], list) and data["sources"] == []
     # FR-4.4: difficulty/volume present.
     assert "keyword_difficulty" in data and "search_volume" in data
 

@@ -37,13 +37,11 @@ _STOP_WORDS = frozenset(
     }
 )
 
-# Trusted citation source archetypes (FR-4.2). Real providers replace these with
-# observed top-ranking / authoritative domains for the topic.
-_TRUSTED_SOURCE_HINTS = (
-    ("Wikipedia", "https://en.wikipedia.org/wiki/{slug}"),
-    ("Official documentation", "https://{slug}.com/docs"),
-    ("Reuters", "https://www.reuters.com/search/?q={slug}"),
-)
+# NOTE: the mock/offline provider intentionally returns NO citation sources (see
+# MockResearchProvider._sources). Fabricating slug-derived URLs (e.g.
+# "https://<slug>.com/docs" or a lowercased "en.wikipedia.org/wiki/<slug>")
+# produced fake sources the writer then attributed inline on every sentence.
+# Real providers overlay the ACTUAL observed top-ranking domains instead.
 
 
 def _seed(*parts: str) -> int:
@@ -164,14 +162,19 @@ class MockResearchProvider(ResearchProvider):
         return results
 
     def _headings(self, topic: str, keyword: str, terms: list[str]) -> list[str]:
-        """Competitor H2 headings (FR-4.1)."""
+        """Competitor H2 headings (FR-4.1).
+
+        Noun-phrase / object-position frames so they stay grammatical whether the
+        keyword is singular, plural, or a long phrase (a subject-position
+        "Is {keyword} worth it?" reads broken for "best standing desks").
+        """
         base = [
-            f"What is {topic}?",
-            f"How does {keyword} work?",
-            f"Key features of {keyword}",
+            f"What to know about {keyword}",
+            f"How to choose {keyword}",
+            f"Key features to compare in {keyword}",
             f"Pros and cons of {keyword}",
-            f"{topic} pricing and plans",
-            f"Is {keyword} worth it?",
+            f"Pricing and plans for {keyword}",
+            f"What to look for in {keyword}",
         ]
         # Add a couple of term-derived headings for variety, still deterministic.
         for term in terms[:2]:
@@ -179,13 +182,19 @@ class MockResearchProvider(ResearchProvider):
         return base
 
     def _paa(self, topic: str, keyword: str) -> list[str]:
-        """People Also Ask questions (FR-4.1)."""
+        """People Also Ask questions (FR-4.1).
+
+        Object-position frames stay grammatical for singular OR plural keyword
+        phrases (subject-position "Is {keyword} legit?" reads broken for a plural
+        phrase like "best standing desks").
+        """
+        kw = keyword or topic
         return [
-            f"Is {keyword} legit?",
-            f"How much does {keyword} cost?",
-            f"What are the best alternatives to {keyword}?",
-            f"How do I get started with {topic}?",
-            f"Is {topic} safe to use?",
+            f"What should you know about {kw}?",
+            f"How much should you expect to pay for {kw}?",
+            f"What are the best alternatives to {kw}?",
+            f"How do you choose {kw}?",
+            f"What should you look for when comparing {kw}?",
         ]
 
     def _entities(self, terms: list[str], seed: int) -> list[dict]:
@@ -203,11 +212,15 @@ class MockResearchProvider(ResearchProvider):
         return entities
 
     def _sources(self, slug: str) -> list[dict]:
-        """Trusted citation sources for the topic (FR-4.2)."""
-        return [
-            {"title": title, "url": url.format(slug=slug), "trust": "high"}
-            for title, url in _TRUSTED_SOURCE_HINTS
-        ]
+        """Citation sources — EMPTY for the offline mock (FR-4.2).
+
+        The mock cannot know real sources for an arbitrary topic, and fabricating
+        slug-derived URLs leaked fake citations the writer attributed on every
+        sentence ("according to Wikipedia", "standing-desks.com/docs"). Real
+        providers (Brave/DuckDuckGo/Hybrid) overlay the actual top-ranking domains;
+        with no sources the writer prompt already switches to uncited prose.
+        """
+        return []
 
 
 def _domain_from_url(url: str) -> str:
@@ -653,7 +666,13 @@ class HybridResearchProvider(ResearchProvider):
         except Exception as exc:  # noqa: BLE001 - resilience boundary
             data["_hybrid_error"] = str(exc)
             llm = None
-        return llm if llm is not None else data
+        if llm is not None:
+            return llm
+        # Neither DuckDuckGo nor LLM web search returned real results — never
+        # surface fabricated/citable sources the provider didn't actually fetch.
+        data["sources"] = []
+        data.setdefault("provider", "mock")
+        return data
 
     def _llm_search(self, brief: dict) -> dict | None:
         from app.config import get_settings
