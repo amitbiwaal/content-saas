@@ -553,6 +553,10 @@ class DuckDuckGoResearchProvider(ResearchProvider):
                 domain = _domain_from_url(url)
                 if not domain:
                     continue
+                # Skip DuckDuckGo sponsored/ad redirects (y.js) — not organic
+                # results; they pollute the citable source list.
+                if domain.endswith("duckduckgo.com") or "ad_domain=" in href or "y.js" in href:
+                    continue
                 items.append(
                     {
                         "rank_in_q": i + 1,
