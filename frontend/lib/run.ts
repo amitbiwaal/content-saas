@@ -282,6 +282,9 @@ export function attachRunStream(
     update((r) => ({ ...r, awaiting: { stage: d.stage, next: d.next, regenerate: d.regenerate || d.stage } }));
     es.close();
     opts.onAwait?.(d);
+    // A fresh gated run was charged at start — refresh the header credits chip
+    // now rather than only when the whole run eventually completes.
+    creditsChanged();
   });
 
   es.addEventListener("done", (e) => {

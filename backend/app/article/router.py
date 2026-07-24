@@ -20,12 +20,12 @@ from sqlalchemy.orm import Session
 
 from app.article.service import generate_draft, proofread_sections, regenerate_section
 from app.db import get_db
+from app.security import require_project_access
 from app.models import Draft, Outline, Project, Research
 from app.review import touch_stage
 
-router = APIRouter(prefix="/api/projects", tags=["article"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["article"], dependencies=[Depends(require_project_access)])
 # --------------------------------------------------------------------------- #
 # Wire schemas
 # --------------------------------------------------------------------------- #

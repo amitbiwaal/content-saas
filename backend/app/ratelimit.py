@@ -70,9 +70,15 @@ def _client_id(request: Request) -> str:
 
 
 def _limit_for(path: str, method: str) -> tuple[int, str] | tuple[None, None]:
+    s = get_settings()
+    # The live run stream is a GET (EventSource) but it's the most expensive
+    # call in the app — count stream opens in the run bucket too.
+    if method == "GET":
+        if path.endswith("/run/stream"):
+            return s.rate_limit_run_per_min, "run"
+        return None, None
     if method != "POST":
         return None, None
-    s = get_settings()
     if _AUTH_RE.search(path):
         return s.rate_limit_auth_per_min, "auth"
     if "/from-message" in path or _RUN_RE.search(path):

@@ -20,12 +20,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.security import require_project_access
 from app.factcheck.service import check_draft
 from app.models import Claim, Draft, Project, Research
 
-router = APIRouter(prefix="/api/projects", tags=["factcheck"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["factcheck"], dependencies=[Depends(require_project_access)])
 # --------------------------------------------------------------------------- #
 # Response schemas
 # --------------------------------------------------------------------------- #

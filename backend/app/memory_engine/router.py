@@ -26,12 +26,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.security import get_current_user
 from app.memory_engine.service import suggest_internal_links, topic_coverage
 from app.models import Draft, InternalLink, Memory, Project
 
-router = APIRouter(prefix="/api/projects", tags=["memory"])
-
-
+# Signed-in users only.
+router = APIRouter(prefix="/api/projects", tags=["memory"], dependencies=[Depends(get_current_user)])
 # --------------------------------------------------------------------------- #
 # Wire schemas (kept local: app/schemas.py is owned by the integrator)
 # --------------------------------------------------------------------------- #

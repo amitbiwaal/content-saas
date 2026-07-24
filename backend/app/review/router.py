@@ -17,12 +17,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.security import require_project_access
 from app.models import Project
 from app.review.service import GATED_STAGES, approve_stage, next_stage, touch_stage
 
-router = APIRouter(prefix="/api/projects", tags=["review"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["review"], dependencies=[Depends(require_project_access)])
 class ApproveIn(BaseModel):
     """Editor sign-off on a gated stage (human-in-the-loop, PRD §9.5 override)."""
 

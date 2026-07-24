@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.media.image import build_image_prompt, default_alt, generate_image
 from app.models import Project
+from app.security import require_project_access
 
 router = APIRouter(prefix="/api/projects", tags=["media"])
 
@@ -48,7 +49,12 @@ def _brief(project: Project) -> dict:
     }
 
 
-@router.post("/{project_id}/image")
+@router.post(
+    "/{project_id}/image",
+    # Owner-only: image generation is billed model work. The GET below stays
+    # tokenless on purpose — it serves <img> tags, which cannot send headers.
+    dependencies=[Depends(require_project_access)],
+)
 def generate_featured_image(
     project_id: str, body: ImageIn | None = None, db: Session = Depends(get_db)
 ) -> dict:

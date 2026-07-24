@@ -20,13 +20,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.security import require_project_access
 from app.models import Decision, Outline, Project, Research
 from app.outline.service import build_outline
 from app.review import touch_stage
 
-router = APIRouter(prefix="/api/projects", tags=["outline"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["outline"], dependencies=[Depends(require_project_access)])
 class OutlineIn(BaseModel):
     """Optional body for an outline (re)build in review mode.
 

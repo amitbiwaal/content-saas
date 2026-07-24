@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app import credits as credits_mod
 from app.council import run_council
 from app.council.roles import DEFAULT_SEATS
 from app.db import get_db
@@ -252,6 +253,7 @@ def run_project_council(
     project_id: str,
     body: RunCouncilIn | None = None,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[Decision]:
     """Run (or re-run) the council on the project's brief and persist the outcome.
 
@@ -260,10 +262,18 @@ def run_project_council(
     accumulation (FR-5.5). Uses the latest Research as context when available. In
     review mode an optional ``feedback`` instruction steers the re-run and the
     ``council`` checkpoint is marked pending for human sign-off.
+
+    Owner-only, and billed: a council re-run is real model spend (4 seats +
+    debate + judge), charged at the base run rate.
     """
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="project not found")
+    project = owned_project(project_id, db, user)
+    credits_mod.charge(
+        db, user, credits_mod.BASE_RUN_CREDITS, "run",
+        project_id=project_id, detail="Council re-run",
+    )
+    # Commit the charge before the (long) council run so the write lock isn't
+    # held across minutes of model calls.
+    db.commit()
 
     # Clean re-run: drop prior council artifacts for this project (FR-5.5).
     db.execute(delete(AgentRun).where(AgentRun.project_id == project_id))
@@ -399,7 +409,10 @@ def run_project_council(
 
 @router.post("/{project_id}/chat")
 def chat_followup(
-    project_id: str, payload: ChatIn, db: Session = Depends(get_db)
+    project_id: str,
+    payload: ChatIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> dict:
     """Follow-up chat about a produced project (PRD §7 conversational editing).
 
@@ -410,9 +423,7 @@ def chat_followup(
     back to the deterministic mock when no provider key is set, so it always
     responds (PRD §12).
     """
-    project = db.get(Project, project_id)
-    if not project:
-        raise HTTPException(status_code=404, detail="project not found")
+    project = owned_project(project_id, db, user)
 
     message = (payload.message or "").strip()
     if not message:
@@ -483,10 +494,13 @@ def chat_followup(
 
 
 @router.get("/{project_id}/decisions", response_model=list[DecisionOut])
-def list_decisions(project_id: str, db: Session = Depends(get_db)) -> list[Decision]:
+def list_decisions(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[Decision]:
     """Judge decisions for the project — feeds the Debate Room (PRD §5.3)."""
-    if not db.get(Project, project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+    owned_project(project_id, db, user)
     return list(
         db.scalars(
             select(Decision)
@@ -497,7 +511,11 @@ def list_decisions(project_id: str, db: Session = Depends(get_db)) -> list[Decis
 
 
 @router.get("/{project_id}/debate")
-def get_debate(project_id: str, db: Session = Depends(get_db)) -> dict:
+def get_debate(
+    project_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
     """Latest debate transcript + the agent reports (PRD §5.1/5.2).
 
     ``turns`` is the threaded, replayable transcript (openings → pairwise
@@ -505,8 +523,7 @@ def get_debate(project_id: str, db: Session = Depends(get_db)) -> dict:
     reloads mid/after a run can re-render the whole debate. ``messages`` /
     ``conflicts`` remain for back-compat.
     """
-    if not db.get(Project, project_id):
-        raise HTTPException(status_code=404, detail="project not found")
+    owned_project(project_id, db, user)
     debate = db.scalars(
         select(Debate)
         .where(Debate.project_id == project_id)
@@ -560,12 +577,14 @@ def override_decision(
     decision_id: str,
     payload: DecisionUpdate,
     db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Decision:
     """Human override of a Judge decision's label (FR-5.5).
 
     Records who overrode it so the audit log shows the human in the loop
     (PRD §16 audit of decisions).
     """
+    owned_project(project_id, db, user)
     if payload.label not in _DECISION_LABELS:
         raise HTTPException(
             status_code=422,

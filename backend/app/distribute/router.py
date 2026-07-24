@@ -19,12 +19,13 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
+from app.security import require_project_access
 from app.distribute.repurpose import repurpose_linkedin, repurpose_reddit
 from app.distribute.service import linkedin_publish, reddit_publish
 from app.models import Draft, Project
 
-router = APIRouter(prefix="/api/projects", tags=["distribute"])
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["distribute"], dependencies=[Depends(require_project_access)])
 _CHANNELS = {"linkedin", "reddit"}
 
 

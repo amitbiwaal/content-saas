@@ -27,11 +27,11 @@ from sqlalchemy.orm import Session
 
 from app.compliance.house_rules import check
 from app.db import get_db
+from app.security import require_project_access
 from app.models import Draft, Project
 
-router = APIRouter(prefix="/api/projects", tags=["compliance"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["compliance"], dependencies=[Depends(require_project_access)])
 # --------------------------------------------------------------------------- #
 # Schemas
 # --------------------------------------------------------------------------- #

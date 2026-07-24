@@ -21,14 +21,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.security import require_project_access
 from app.models import Claim, Draft, Project, Research, Score
 from app.scoring.gate import GATE_TARGETS, Scores, evaluate_gate
 from app.scoring.optimizer import top_fixes
 from app.scoring.service import compute_scores
 
-router = APIRouter(prefix="/api/projects", tags=["scoring"])
-
-
+# Owner-only: every route is project-scoped model work/artifacts.
+router = APIRouter(prefix="/api/projects", tags=["scoring"], dependencies=[Depends(require_project_access)])
 # --------------------------------------------------------------------------- #
 # Response models (local to this module — schemas.py is owned elsewhere).
 # --------------------------------------------------------------------------- #

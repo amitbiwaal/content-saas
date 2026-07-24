@@ -11,13 +11,14 @@ from __future__ import annotations
 import json
 from collections import OrderedDict
 
-from fastapi import APIRouter
+from fastapi import Depends, APIRouter
 from pydantic import BaseModel, Field
 
 from app.providers import ProviderError, ProviderRefusal, get_adapter
+from app.security import get_current_user
 
-router = APIRouter(prefix="/api", tags=["translate"])
-
+# Signed-in users only.
+router = APIRouter(prefix="/api", tags=["translate"], dependencies=[Depends(get_current_user)])
 _LANG_NAMES = {
     "hi": "Hindi", "es": "Spanish", "fr": "French", "ar": "Arabic",
     "de": "German", "pt": "Portuguese", "zh": "Chinese", "ja": "Japanese",

@@ -56,12 +56,18 @@ def _sse_error(detail: str) -> StreamingResponse:
 
 # Resuming a gated run at a stage requires its guarding gate to be approved
 # first, so a client can't skip a pause. Every content step is gated, so each
-# resume point checks the previous step's checkpoint (article → "draft").
+# resume point checks the previous step's checkpoint (polish/factcheck sit
+# behind the outline/draft sign-offs; keywords/competitors regenerate the
+# research artifact itself, whose gate is pending at that point).
 _RESUME_REQUIRES = {
     "council": "research",
     "outline": "council",
     "article": "outline",
+    "polish": "outline",
     "factcheck": "draft",
+    "scoring": "draft",
+    "gate": "draft",
+    "compliance": "draft",
 }
 
 router = APIRouter(prefix="/api/projects", tags=["pipeline"])
@@ -124,10 +130,24 @@ async def run_pipeline_stream(
     project = db.get(Project, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="project not found")
+    # Accept the legacy stage names still held by older clients/open tabs.
+    from_stage = {"research": "keywords", "draft": "article"}.get(from_stage, from_stage)
     if from_stage is not None and from_stage not in STAGES:
         raise HTTPException(
             status_code=422, detail=f"from must be one of {list(STAGES)}"
         )
+
+    # EVERY stream open — fresh start, gated resume, or reconnect/attach —
+    # requires a signed-in owner. Without this, `?from=<stage>` started a full,
+    # uncharged, unauthenticated pipeline run on any project id, and a reconnect
+    # could tail another user's live run.
+    user = _resolve_user(token, authorization, db)
+    if user is None:
+        db.close()
+        return _sse_error("Please sign in to run.")
+    if project.owner_id is not None and project.owner_id != user.id:
+        db.close()
+        return _sse_error("Project not found.")
 
     # On a native EventSource auto-reconnect the browser resends the last id it
     # saw as the ``Last-Event-ID`` header (the URL has no ``after``); honour it so
@@ -145,23 +165,19 @@ async def run_pipeline_stream(
     starting = after < 0 and running is None
 
     if starting:
-        # Enforce the gate: can't resume past a pause the human hasn't signed off.
-        required_gate = _RESUME_REQUIRES.get(from_stage) if gated else None
+        # Enforce the gate: can't resume past a pause the human hasn't signed
+        # off. Applies whether or not this leg was opened with gated=1 — the
+        # checkpoint ledger is the source of truth, so a client can't skip a
+        # pause by dropping the flag.
+        required_gate = _RESUME_REQUIRES.get(from_stage)
         if required_gate and stage_status(project.checkpoints, required_gate) != "approved":
             raise HTTPException(
                 status_code=409,
                 detail=f"stage '{required_gate}' must be approved before resuming at '{from_stage}'",
             )
-        # Auth + credits: only a FRESH run (from the top) requires sign-in and is
-        # charged; a gated resume (``from`` set) continues an already-charged run.
+        # Credits: only a FRESH run (from the top) is charged; a resume
+        # (``from`` set) continues the already-charged run.
         if from_stage is None:
-            user = _resolve_user(token, authorization, db)
-            if user is None:
-                db.close()
-                return _sse_error("Please sign in to run.")
-            if project.owner_id is not None and project.owner_id != user.id:
-                db.close()
-                return _sse_error("Project not found.")
             cost = credits_mod.estimate_run_credits(project)
             if int(user.credits) < cost:
                 db.close()

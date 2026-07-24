@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models import CreditLedger, Project, User
@@ -70,16 +70,43 @@ def charge(
     db: Session, user: User, credits: int, reason: str, *,
     project_id: str | None = None, detail: str | None = None,
 ) -> CreditLedger:
-    """Deduct credits; raise 402 if the balance can't cover it. Negative delta."""
-    if int(user.credits) < credits:
-        raise HTTPException(
-            status_code=status.HTTP_402_PAYMENT_REQUIRED,
-            detail=(
-                f"Not enough credits: this run needs {credits} but you have "
-                f"{int(user.credits)}. Top up to continue."
-            ),
-        )
-    return _record(db, user, -abs(credits), reason, project_id=project_id, detail=detail)
+    """Deduct credits; raise 402 if the balance can't cover it. Negative delta.
+
+    The deduction is a CONDITIONAL, atomic UPDATE (``credits >= cost``) so two
+    concurrent charges can't both pass a read-then-write balance check and
+    double-spend (the classic lost-update race on Postgres).
+    """
+    cost = abs(credits)
+    result = db.execute(
+        update(User)
+        .where(User.id == user.id, User.credits >= cost)
+        .values(credits=User.credits - cost)
+    )
+    if result.rowcount:
+        # Deducted atomically — sync the in-memory object to the new balance.
+        balance = db.scalar(select(User.credits).where(User.id == user.id))
+        user.credits = int(balance) if balance is not None else int(user.credits) - cost
+    else:
+        # No row matched: either the balance is short, or this User instance has
+        # no row in THIS session's DB (detached stub in tests) — fall back to
+        # the in-memory deduction for the latter.
+        row_balance = db.scalar(select(User.credits).where(User.id == user.id))
+        have = int(row_balance) if row_balance is not None else int(user.credits)
+        if row_balance is not None or have < cost:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=(
+                    f"Not enough credits: this run needs {cost} but you have "
+                    f"{have}. Top up to continue."
+                ),
+            )
+        user.credits = have - cost
+    entry = CreditLedger(
+        user_id=user.id, delta=-cost, balance_after=int(user.credits),
+        reason=reason, project_id=project_id, detail=detail,
+    )
+    db.add(entry)
+    return entry
 
 
 def adjust(

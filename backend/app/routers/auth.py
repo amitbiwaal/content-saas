@@ -133,11 +133,17 @@ def signup(payload: SignupIn, db: Session = Depends(get_db)) -> AuthOut:
     return _auth_out(db, user)
 
 
+# A throwaway hash compared against when the email doesn't exist, so unknown
+# and known emails take the same time (no account enumeration via timing).
+_DUMMY_HASH = hash_password("timing-equalizer-dummy")
+
+
 @router.post("/login", response_model=AuthOut)
 def login(payload: LoginIn, db: Session = Depends(get_db)) -> AuthOut:
     email = payload.email.strip().lower()
     user = db.scalars(select(User).where(User.email == email)).first()
-    if user is None or not verify_password(payload.password, user.password_hash):
+    ok = verify_password(payload.password, user.password_hash if user else _DUMMY_HASH)
+    if user is None or not ok:
         raise HTTPException(status_code=401, detail="Wrong email or password.")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="This account has been suspended.")

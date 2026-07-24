@@ -138,7 +138,9 @@ export default function Shell({
     return () => window.removeEventListener("credits:changed", onCredits);
   }, []);
 
-  const credits = user?.credits ?? 0;
+  // null while the account is still loading — the chip shows "…" instead of a
+  // misleading "0 credits left" flash.
+  const credits = user ? user.credits : null;
   const displayName = user?.name || user?.email || "Account";
   const displayEmail = user?.email || "";
   const wpConnected = !!user?.has_wordpress;
@@ -253,7 +255,7 @@ export default function Shell({
           <div className="topbar-right">
             {status}
             <Link href="/settings" className="hdr-credits" title={t("Credits remaining")}>
-              <span className="hdr-credits-num">{credits.toLocaleString("en-US")}</span>
+              <span className="hdr-credits-num">{credits === null ? "…" : credits.toLocaleString("en-US")}</span>
               <span className="hdr-credits-label">{t("credits left")}</span>
             </Link>
             <button className="hdr-upgrade" onClick={() => setUpgradeOpen(true)}>⚡ {t("Upgrade")}</button>
@@ -287,7 +289,7 @@ export default function Shell({
               <div>
                 <h3>{t("Upgrade your plan")}</h3>
                 <p className="muted small">
-                  {t("You have")} {credits.toLocaleString("en-US")} {t("credits left.")}
+                  {t("You have")} {(credits ?? 0).toLocaleString("en-US")} {t("credits left.")}
                   {!PAYMENTS_ENABLED && <> · {t("Self-serve upgrades are coming soon.")}</>}
                 </p>
               </div>

@@ -173,6 +173,24 @@ def get_current_user(
     return user
 
 
+def require_project_access(
+    project_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    """Router-level guard for ``/api/projects/{project_id}/...`` sub-routes.
+
+    404s unless the signed-in user owns the project (or it is a legacy pre-auth
+    row with no owner). Declared as a dependency so a whole router gets the
+    check in one line; handlers keep loading the project themselves.
+    """
+    from app.models import Project  # local import to avoid a cycle at startup
+
+    project = db.get(Project, project_id)
+    if project is None or (project.owner_id is not None and project.owner_id != user.id):
+        raise HTTPException(status_code=404, detail="project not found")
+
+
 def user_is_admin(user: User) -> bool:
     """Effective admin: the DB flag OR an email on the ADMIN_EMAILS allow-list.
 

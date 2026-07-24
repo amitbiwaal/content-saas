@@ -6,13 +6,13 @@ dry-run/mock — secrets are never returned, only booleans.
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import Depends, APIRouter
 
 from app.config import get_settings
+from app.security import get_current_user
 
-router = APIRouter(prefix="/api/integrations", tags=["integrations"])
-
-
+# Signed-in users only.
+router = APIRouter(prefix="/api/integrations", tags=["integrations"], dependencies=[Depends(get_current_user)])
 @router.get("")
 def integrations_status() -> dict:
     s = get_settings()
