@@ -215,6 +215,10 @@ export type KeywordSet = {
   longtail: string[];
   intent?: string;
   rationale?: string;
+  // Real Ahrefs metrics for the primary, when an API key is configured.
+  volume?: number;
+  difficulty?: number;
+  traffic_potential?: number;
 };
 // One fetched + analysed top-ranking page (pipeline stage 2).
 export type CompetitorPage = {

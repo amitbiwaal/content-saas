@@ -115,12 +115,144 @@ def _heuristic_keywords(brief: dict) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+# Ahrefs enrichment — pick the primary by REAL search volume, not phrasing luck
+# --------------------------------------------------------------------------- #
+# A candidate must be at least plausibly rankable to win the primary slot.
+_MAX_DIFFICULTY = 40
+
+# Ahrefs expects ISO alpha-2; map the few non-ISO values the form allows.
+_COUNTRY_FIX = {"UK": "GB", "GLOBAL": "US", "EU": "DE"}
+
+
+def _keyword_variants(primary: str) -> list[str]:
+    """Cheap high-value variants of the primary (singular/plural, 'best X').
+
+    The LLM picks a phrasing blind to volume; the variants let Ahrefs data
+    decide (live example: plural 'quiet mechanical keyboards' = 150/mo while
+    the singular = 2,500/mo).
+    """
+    out: list[str] = []
+    words = primary.split()
+    if words:
+        last = words[-1]
+        if last.endswith("s") and len(last) > 3:
+            out.append(" ".join(words[:-1] + [last[:-1]]))
+        else:
+            out.append(" ".join(words[:-1] + [last + "s"]))
+    if not primary.lower().startswith("best "):
+        out.append(f"best {primary}")
+    return [v for v in out if v and v.lower() != primary.lower()]
+
+
+def _ahrefs_metrics(candidates: list[str], country: str, api_key: str) -> dict[str, dict]:
+    """Volume/difficulty for candidates via the Ahrefs v3 API. Never raises."""
+    import httpx
+
+    cc = (country or "US").strip().upper()
+    cc = _COUNTRY_FIX.get(cc, cc)[:2]
+    try:
+        resp = httpx.get(
+            "https://api.ahrefs.com/v3/keywords-explorer/overview",
+            params={
+                "select": "keyword,volume,difficulty,traffic_potential",
+                "country": cc,
+                "keywords": ",".join(candidates[:10]),
+            },
+            headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        rows = (resp.json() or {}).get("keywords") or []
+    except Exception:  # noqa: BLE001 - enrichment is best-effort, never fatal
+        return {}
+    out: dict[str, dict] = {}
+    for row in rows:
+        if isinstance(row, dict) and row.get("keyword"):
+            out[str(row["keyword"]).strip().lower()] = row
+    return out
+
+
+def _select_primary(original: str, candidates: list[str], metrics: dict[str, dict]) -> str:
+    """The candidate with the most volume at a rankable difficulty.
+
+    Falls back to ``original`` when no candidate has usable data, so a failed/
+    empty Ahrefs response never degrades the LLM's choice.
+    """
+    best, best_volume = original, -1
+    for cand in candidates:
+        row = metrics.get(cand.lower())
+        if not row:
+            continue
+        volume = row.get("volume")
+        difficulty = row.get("difficulty")
+        if not isinstance(volume, int) or volume <= 0:
+            continue
+        if isinstance(difficulty, int) and difficulty > _MAX_DIFFICULTY:
+            continue
+        if volume > best_volume:
+            best, best_volume = cand, volume
+    return best
+
+
+def enrich_with_ahrefs(keywords: dict, country: str, *, api_key: str | None = None) -> dict:
+    """Re-rank the keyword set with real Ahrefs volume/difficulty data.
+
+    - The primary is re-picked from {primary + its variants + secondaries} by
+      volume (difficulty-capped); the displaced primary joins the secondaries.
+    - The winning metrics are attached as ``volume``/``difficulty``/
+      ``traffic_potential`` so the UI can show WHY this keyword won.
+    No key / API error / no data → the set passes through unchanged.
+    """
+    if api_key is None:
+        from app.config import get_settings
+
+        api_key = get_settings().ahrefs_api_key
+    if not api_key:
+        return keywords
+
+    primary = keywords.get("primary") or ""
+    if not primary:
+        return keywords
+    # A user-chosen keyword is never swapped — only annotated with its metrics.
+    locked = bool(keywords.get("user_locked"))
+    candidates = (
+        [primary]
+        if locked
+        else [primary, *_keyword_variants(primary), *(keywords.get("secondary") or [])[:6]]
+    )
+    metrics = _ahrefs_metrics(candidates, country, api_key)
+    if not metrics:
+        return keywords
+
+    winner = primary if locked else _select_primary(primary, candidates, metrics)
+    row = metrics.get(winner.lower()) or {}
+    if winner.lower() != primary.lower():
+        secondary = [s for s in keywords.get("secondary") or [] if s.lower() != winner.lower()]
+        keywords["secondary"] = ([primary] + secondary)[:8]
+        keywords["primary"] = winner
+        keywords["rationale"] = (
+            f"Chosen by real search data: {row.get('volume', '?')}/mo, "
+            f"difficulty {row.get('difficulty', '?')} (Ahrefs). "
+            + str(keywords.get("rationale") or "")
+        ).strip()[:300]
+    if isinstance(row.get("volume"), int):
+        keywords["volume"] = row["volume"]
+    if isinstance(row.get("difficulty"), int):
+        keywords["difficulty"] = row["difficulty"]
+    if isinstance(row.get("traffic_potential"), int):
+        keywords["traffic_potential"] = row["traffic_potential"]
+    return keywords
+
+
 def research_keywords(brief: dict, *, provider: str = "anthropic") -> dict:
     """Derive the keyword set for a brief (pipeline stage 1).
 
     Honors an explicit user keyword: when the brief already carries one, it is
-    kept as ``primary`` and the LLM only fills the supporting sets. Never raises;
-    always returns the full shape.
+    kept as ``primary`` and the LLM only fills the supporting sets. When an
+    Ahrefs API key is configured, the primary is then re-picked by REAL search
+    volume/difficulty across the candidate set. Never raises; always returns
+    the full shape.
     """
     user_keyword = _clean_phrase(brief.get("keyword"))
     prompt_parts = [
@@ -148,11 +280,13 @@ def research_keywords(brief: dict, *, provider: str = "anthropic") -> dict:
     except (ProviderRefusal, ProviderError, json.JSONDecodeError, TypeError, ValueError):
         data = None
 
+    country = brief.get("country") or "US"
     fallback = _heuristic_keywords(brief)
     if data is None:
         if user_keyword:
             fallback["primary"] = user_keyword
-        return fallback
+            fallback["user_locked"] = True
+        return enrich_with_ahrefs(fallback, country)
 
     primary = user_keyword or _clean_phrase(data.get("primary")) or fallback["primary"]
     seen = {primary.lower()}
@@ -165,10 +299,12 @@ def research_keywords(brief: dict, *, provider: str = "anthropic") -> dict:
         intent = fallback["intent"]
 
     rationale = re.sub(r"\s+", " ", str(data.get("rationale") or "")).strip()[:300]
-    return {
+    result = {
+        "user_locked": bool(user_keyword),
         "primary": primary,
         "secondary": secondary,
         "longtail": longtail,
         "intent": intent,
         "rationale": rationale or fallback["rationale"],
     }
+    return enrich_with_ahrefs(result, country)

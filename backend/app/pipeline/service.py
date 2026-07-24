@@ -123,6 +123,24 @@ def _stage_feedback(project: Project, stage: str) -> str | None:
     return ((project.checkpoints or {}).get(stage) or {}).get("feedback")
 
 
+def _auto_word_target(research_norm: dict) -> int | None:
+    """Auto depth: aim near the median of the pages that actually rank.
+
+    Google's page one defines the depth bar — a 1,300-word article against
+    3-7k-word competitors reads thin. Used only when the user left length on
+    Auto; clamped so one 12k-word outlier can't triple the run cost.
+    """
+    counts = sorted(
+        p.get("word_count", 0)
+        for p in research_norm.get("competitors") or []
+        if isinstance(p, dict) and isinstance(p.get("word_count"), int) and p.get("word_count", 0) > 400
+    )
+    if not counts:
+        return None
+    median = counts[len(counts) // 2]
+    return max(1200, min(2600, round(median * 0.85)))
+
+
 # --------------------------------------------------------------------------- #
 # Loaders — reconstruct a prior stage's artifact when a gated run resumes
 # --------------------------------------------------------------------------- #
@@ -327,6 +345,14 @@ def stream_full_pipeline(
         research_norm = _load_research(db, project, brief)
         if research_norm.get("keywords"):
             keywords = research_norm["keywords"]
+
+    # Auto depth: with no user length target, aim near the ranking pages'
+    # median depth so the article competes on substance (applies to fresh runs
+    # AND resumes — the brief dict feeds the outline sizing and writer budgets).
+    if not brief.get("word_count"):
+        auto_target = _auto_word_target(research_norm)
+        if auto_target:
+            brief["word_count"] = auto_target
 
     # --- 2. Council debate + Judge (PRD §8), streamed per seat ----------- #
     if start_idx <= STAGES.index("council"):
@@ -533,7 +559,8 @@ def stream_full_pipeline(
             {**research_norm, "keyword": project.keyword, "topic": project.topic},
             feedback=_stage_feedback(project, "outline"),
             article_type=project.article_type,
-            target_words=project.word_count,
+            # brief carries the auto depth target when the user left length on Auto
+            target_words=brief.get("word_count"),
         )
         outline_row = Outline(
             project_id=project.id,

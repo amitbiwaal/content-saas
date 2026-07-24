@@ -286,6 +286,19 @@ export default function RunView({
               <div className="rblock">
                 <div className="rsub">{t("Main keyword to rank for")}</div>
                 <div className="kw-primary">{run.keywords.primary}</div>
+                {(run.keywords.volume != null || run.keywords.difficulty != null) && (
+                  <div className="chips" style={{ marginTop: 6 }}>
+                    {run.keywords.volume != null && (
+                      <span className="chip-e">🔎 {run.keywords.volume.toLocaleString("en-US")}/{t("mo")}</span>
+                    )}
+                    {run.keywords.difficulty != null && (
+                      <span className="chip-e">KD {run.keywords.difficulty}</span>
+                    )}
+                    {run.keywords.traffic_potential != null && (
+                      <span className="chip-e">TP {run.keywords.traffic_potential.toLocaleString("en-US")}</span>
+                    )}
+                  </div>
+                )}
                 {run.keywords.rationale ? <p className="muted small">{run.keywords.rationale}</p> : null}
                 {run.keywords.secondary?.length ? (
                   <>

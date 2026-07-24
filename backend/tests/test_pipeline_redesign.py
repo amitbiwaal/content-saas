@@ -78,6 +78,65 @@ def test_research_keywords_honors_user_keyword():
     assert kw["primary"] == "ergonomic chair"
 
 
+def test_keyword_variants_and_volume_selection():
+    from app.research.keywords import _keyword_variants, _select_primary, enrich_with_ahrefs
+
+    # Variants: plural↔singular flip + a "best X" form.
+    variants = _keyword_variants("quiet mechanical keyboards")
+    assert "quiet mechanical keyboard" in variants
+    assert "best quiet mechanical keyboards" in variants
+
+    # Selection: highest volume wins under the difficulty cap...
+    metrics = {
+        "quiet mechanical keyboards": {"volume": 150, "difficulty": 0},
+        "quiet mechanical keyboard": {"volume": 2500, "difficulty": 0},
+        "hard one": {"volume": 90000, "difficulty": 80},  # over the cap → skipped
+    }
+    picked = _select_primary(
+        "quiet mechanical keyboards",
+        ["quiet mechanical keyboards", "quiet mechanical keyboard", "hard one"],
+        metrics,
+    )
+    assert picked == "quiet mechanical keyboard"
+    # ...and no data at all keeps the original.
+    assert _select_primary("x", ["x"], {}) == "x"
+
+    # No API key → the set passes through untouched.
+    kw = {"primary": "quiet mechanical keyboards", "secondary": []}
+    assert enrich_with_ahrefs(dict(kw), "US", api_key="") == kw
+
+
+def test_user_locked_keyword_never_swapped(monkeypatch):
+    from app.research import keywords as kwmod
+
+    monkeypatch.setattr(
+        kwmod,
+        "_ahrefs_metrics",
+        lambda cands, country, key: {
+            "my keyword": {"volume": 10, "difficulty": 0},
+            "better keyword": {"volume": 9999, "difficulty": 0},
+        },
+    )
+    out = kwmod.enrich_with_ahrefs(
+        {"primary": "my keyword", "secondary": ["better keyword"], "user_locked": True},
+        "US",
+        api_key="k",
+    )
+    assert out["primary"] == "my keyword"  # annotated, never replaced
+    assert out["volume"] == 10
+
+
+def test_auto_word_target_tracks_competitor_median():
+    from app.pipeline.service import _auto_word_target
+
+    norm = {"competitors": [{"word_count": w} for w in (3349, 4117, 4280, 7520)]}
+    target = _auto_word_target(norm)
+    assert target == 2600  # median 4280 * 0.85 = 3638 → clamped to 2600
+    assert _auto_word_target({"competitors": []}) is None
+    thin = {"competitors": [{"word_count": 900}]}
+    assert _auto_word_target(thin) == 1200  # floor
+
+
 # --------------------------------------------------------------------------- #
 # Competitor page analysis (stage 2)
 # --------------------------------------------------------------------------- #
