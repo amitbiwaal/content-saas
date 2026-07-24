@@ -224,7 +224,7 @@ def _is_table_row(sentence: str) -> bool:
 # scope (usually straight from the user's own brief/keyword), not an assertion
 # about the world — a bare "costs $299" is still a claim needing a source.
 _SCOPE_PRICE_RE = re.compile(
-    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|at)"
+    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|exceeding|at)"
     r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
     # Price ranges are budget guidance, not a verifiable fact:
     # "between $200 and $500", "$200 to $500", "from $200-$500".
@@ -283,7 +283,9 @@ def _figure_in_evidence(sentence: str, evidence_texts: list[str] | None) -> bool
     """
     if not evidence_texts:
         return False
-    figures = re.findall(r"\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s*%", sentence)
+    # The number pattern must END on a digit — "[\d,]*" alone swallows a
+    # trailing sentence comma ("$140,") and then never matches the bank.
+    figures = re.findall(r"\$\s?\d(?:[\d,]*\d)?(?:\.\d+)?|\d+(?:\.\d+)?\s*%", sentence)
     if not figures:
         return False
     corpus = " ".join(evidence_texts)

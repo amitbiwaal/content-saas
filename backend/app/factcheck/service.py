@@ -270,7 +270,7 @@ _SPEC_LINE_RE = re.compile(r"^[A-Za-z][\w /()&'-]{0,30}:\s+\S.{0,45}$")
 # Price-bracket / range scoping ("under $300", "between $200 and $500"): the
 # article's own scope from the brief, not an assertion about the world.
 _SCOPE_PRICE_RE = re.compile(
-    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|at)"
+    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|exceeding|at)"
     r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
     r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
     # "...a $400 budget/limit/cap/mark" — the reader's budget from the brief,
@@ -627,7 +627,8 @@ def grade_claim(claim_text: str, research: dict, *, use_llm_hint: bool = True) -
 # --------------------------------------------------------------------------- #
 # Table-figure verification (evidence-backed runs only)
 # --------------------------------------------------------------------------- #
-_TABLE_FIGURE_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?")
+# Ends on a digit so a trailing cell/sentence comma is never swallowed.
+_TABLE_FIGURE_RE = re.compile(r"\$\s?\d(?:[\d,]*\d)?(?:\.\d+)?")
 
 
 def _unverified_table_figures(draft: dict, research: dict | None) -> list[str]:
