@@ -25,14 +25,18 @@ const LABELS = Object.keys(LABEL_CLASS);
 type StStatus = "pending" | "running" | "done";
 type SeatBox = { role: string; provider: string; status: "waiting" | "done"; model?: string; confidence?: number | null; recommendations?: string[]; routed_from?: string | null };
 
-const STAGE_KEYS = ["research", "council", "outline", "article", "factcheck", "scoring", "gate", "compliance"];
+const STAGE_KEYS = [
+  "keywords", "competitors", "council", "outline", "article", "polish",
+  "factcheck", "scoring", "gate", "compliance",
+];
 const TIMELINE = [
   { key: "brief", label: "Brief", sec: "sec-brief", stage: "" },
-  { key: "research", label: "Research", sec: "sec-research", stage: "research" },
+  { key: "research", label: "Research", sec: "sec-research", stage: "competitors" },
   { key: "council", label: "Council", sec: "sec-council", stage: "council" },
   { key: "judge", label: "Judge", sec: "sec-judge", stage: "council" },
   { key: "outline", label: "Outline", sec: "sec-outline", stage: "outline" },
   { key: "draft", label: "Draft", sec: "sec-draft", stage: "article" },
+  { key: "polish", label: "Polish", sec: "sec-draft", stage: "polish" },
   { key: "factcheck", label: "Fact-check", sec: "sec-factcheck", stage: "factcheck" },
   { key: "scores", label: "Scores & Gate", sec: "sec-scores", stage: "scoring" },
 ];
@@ -90,9 +94,9 @@ export default function JourneyPage() {
       const d = JSON.parse((e as MessageEvent).data);
       setStages((p) => ({ ...p, [d.stage]: d.status === "start" ? "running" : "done" }));
       if (d.status === "done") {
-        if (d.stage === "research") api.getResearch(id).then(setResearch).catch(() => {});
+        if (d.stage === "competitors" || d.stage === "research") api.getResearch(id).then(setResearch).catch(() => {});
         if (d.stage === "outline") api.getOutline(id).then(setOutline).catch(() => {});
-        if (d.stage === "article") api.getDraft(id).then(setDraft).catch(() => {});
+        if (d.stage === "article" || d.stage === "polish") api.getDraft(id).then(setDraft).catch(() => {});
         if (d.stage === "council") setStrategy(d.info?.strategy_summary || "");
       }
     });
@@ -218,7 +222,7 @@ export default function JourneyPage() {
 
           <section id="sec-research" className="jsection">
             <h2>② Research Intelligence {research && <span className="tag tag-blue">{research.intent}</span>}</h2>
-            {!research ? <p className="muted">{stages.research === "running" ? "Gathering…" : "—"}</p> : (
+            {!research ? <p className="muted">{stages.competitors === "running" || stages.keywords === "running" ? "Gathering…" : "—"}</p> : (
               <div className="rgrid">
                 <div className="rblock">
                   <h3>Top SERP ({research.serp.length})</h3>

@@ -190,10 +190,14 @@ def _build_prompt(
         for d in decisions
         if d.get("label") in ("accepted", "merge") and d.get("point")
     ]
+    keywords = research.get("keywords") or {}
     payload = {
         "strategy_summary": strategy_summary,
         # Internal SEO/strategy directives — decide WHAT to cover; NEVER a heading.
         "coverage_guidance": accepted,
+        "primary_keyword": keywords.get("primary") or research.get("keyword") or "",
+        # Weave these into H2 phrasing where they read naturally (never forced).
+        "secondary_keywords": (keywords.get("secondary") or [])[:8],
         "reader_topics_competitors_cover": (research.get("headings") or [])[:30],
         "reader_questions": (research.get("paa") or [])[:20],
         "entities": (research.get("entities") or [])[:30],

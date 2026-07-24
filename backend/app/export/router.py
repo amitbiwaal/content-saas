@@ -274,12 +274,24 @@ def export_to_wordpress(
         **((body.creds if body else None) or {}),
     }
     status = (body.status if body else None) or (user_wp.default_status if user_wp else None)
+    # Default the SEO fields to the pipeline's polished meta pack (draft.seo:
+    # {title, description, slug, takeaways}); an explicit request body wins.
+    draft_seo = draft.seo or {}
+    seo = (body.seo if body else None) or (
+        {
+            "title": draft_seo.get("title"),
+            "meta_description": draft_seo.get("description"),
+            "focus_keyword": project.keyword,
+        }
+        if draft_seo
+        else None
+    )
     return wordpress_publish(
         _draft_payload(draft),
         _brief_from_project(project),
         creds,
         schedule=body.schedule if body else None,
-        seo=body.seo if body else None,
+        seo=seo,
         status=status,
         featured_image=_featured_image(project),
     )

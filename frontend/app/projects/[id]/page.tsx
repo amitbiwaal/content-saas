@@ -10,6 +10,7 @@ import Shell from "../../../components/Shell";
 import DecisionButtons from "../../../components/DecisionButtons";
 import { useLang } from "../../../lib/i18n";
 import { api } from "../../../lib/api";
+import { stepOf } from "../../../lib/run";
 import type {
   AgentReport,
   Claim,
@@ -93,7 +94,9 @@ export default function ProjectDetailPage() {
 
     es.addEventListener("stage", (e) => {
       const d = JSON.parse((e as MessageEvent).data);
-      setStageStatus((prev) => ({ ...prev, [d.stage]: d.status === "start" ? "running" : "done" }));
+      // Map backend stage keys onto the stepper's step keys (the four
+      // verification stages collapse into "checks" — see lib/run.ts).
+      setStageStatus((prev) => ({ ...prev, [stepOf(d.stage)]: d.status === "start" ? "running" : "done" }));
       if (d.stage === "council" && d.status === "done" && d.info?.strategy_summary) {
         setStrategy(d.info.strategy_summary);
       }

@@ -3,8 +3,9 @@
 :func:`stream_full_pipeline` runs a project's brief through the whole engine and
 **yields progress events** as each stage completes, persisting every artifact:
 
-    Research → Council (R1/R2/R3 + Judge) → Outline → Article →
-    Fact-check → Scores → Publish gate → Compliance → Cost
+    Keyword research → Competitor research (real pages) →
+    Council debate (R1/R2/R3 + Judge) → Outline → Article →
+    SEO polish → Fact-check → Scores → Publish gate → Compliance → Cost
 
 The SSE endpoint streams these events to the UI (PRD §16 — responses streamed).
 :func:`run_full_pipeline` consumes the same generator and returns the final
@@ -28,6 +29,11 @@ from collections.abc import Iterator
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.article.polish import (
+    fix_unsupported_claims,
+    generate_seo_meta,
+    stream_polish,
+)
 from app.article.service import stream_draft
 from app.compliance.house_rules import check as house_rules_check
 from app.council import run_council_events
@@ -48,32 +54,42 @@ from app.models import (
 )
 from app.outline.service import build_outline
 from app.providers.registry import estimate_cost_cents
-from app.research.service import gather_research
+from app.research.keywords import research_keywords
+from app.research.service import enrich_with_competitor_pages, gather_research
 from app.review import touch_stage
 from app.scoring import compute_scores, evaluate_gate, top_fixes
 
-# Ordered stage keys the UI stepper renders (PRD §7 pipeline).
+# Ordered stage keys the UI stepper renders (PRD §7 pipeline). The flow follows
+# how a human team would work: find the keywords → study who ranks today →
+# debate the angle → outline → write → polish → verify.
 STAGES = (
-    "research",
+    "keywords",
+    "competitors",
     "council",
     "outline",
     "article",
+    "polish",
     "factcheck",
     "scoring",
     "gate",
     "compliance",
 )
 
+# Legacy stage names still accepted from older clients / persisted runs.
+_STAGE_ALIASES = {"research": "keywords", "draft": "article"}
+
 # Human-in-the-loop gates: in gated mode the run pauses after EVERY content step
 # for sign-off. Keyed by the pipeline stage that just finished; each entry maps to
 # its review-ledger ``checkpoint`` key, the ``next`` stage to resume at on
-# approval, and the ``regenerate`` stage to re-run on reject-with-feedback. (The
-# "article" stage's checkpoint is "draft" — the two names differ historically.)
+# approval, and the ``regenerate`` stage to re-run on reject-with-feedback.
+# Checkpoint keys are unchanged (research/council/outline/draft) so the review
+# ledger + UI keep working: "research" now covers keywords+competitors together,
+# and the draft sign-off happens after the SEO polish (you approve the final text).
 _GATES = {
-    "research": {"checkpoint": "research", "next": "council", "regenerate": "research"},
+    "competitors": {"checkpoint": "research", "next": "council", "regenerate": "keywords"},
     "council": {"checkpoint": "council", "next": "outline", "regenerate": "council"},
     "outline": {"checkpoint": "outline", "next": "article", "regenerate": "outline"},
-    "article": {"checkpoint": "draft", "next": "factcheck", "regenerate": "article"},
+    "polish": {"checkpoint": "draft", "next": "factcheck", "regenerate": "article"},
 }
 
 
@@ -117,6 +133,8 @@ def _research_norm(row: Research) -> dict:
         "sources": row.sources or [],
         "intent": row.intent,
         "provider": row.provider,
+        "keywords": row.keywords or None,
+        "competitors": row.competitors or [],
     }
 
 
@@ -187,6 +205,17 @@ def _load_draft(db: Session, project: Project) -> tuple[dict, Draft | None]:
     return {"sections": row.sections or [], "word_count": row.word_count or 0}, row
 
 
+def _next_draft_version(db: Session, project: Project) -> int:
+    return (
+        db.scalar(
+            select(func.coalesce(func.max(Draft.version), 0)).where(
+                Draft.project_id == project.id
+            )
+        )
+        or 0
+    ) + 1
+
+
 def stream_full_pipeline(
     db: Session,
     project: Project,
@@ -210,6 +239,7 @@ def stream_full_pipeline(
     ``gated`` pauses after the council and the outline for human sign-off.
     """
     brief = _brief(project)
+    start_stage = _STAGE_ALIASES.get(start_stage or "", start_stage)
     start_idx = STAGES.index(start_stage) if start_stage in STAGES else 0
     total_cost = 0.0
 
@@ -219,10 +249,34 @@ def stream_full_pipeline(
             return True
         return False
 
-    # --- 1. Research Intelligence (PRD §9.4, FR-4.5) --------------------- #
-    if start_idx <= STAGES.index("research"):
-        yield _ev("stage", {"stage": "research", "status": "start"})
-        research_norm = gather_research(brief)
+    # --- 1. Keyword research (what searchers actually type) --------------- #
+    keywords: dict | None = None
+    if start_idx <= STAGES.index("keywords"):
+        yield _ev("stage", {"stage": "keywords", "status": "start"})
+        keywords = research_keywords(brief)
+        # The form no longer forces a keyword — persist the derived primary so
+        # every downstream stage (outline title, scoring, exports) sees it.
+        if not (project.keyword or "").strip():
+            project.keyword = (keywords.get("primary") or "")[:255]
+            db.commit()
+        brief["keyword"] = project.keyword or keywords.get("primary") or ""
+        yield _ev(
+            "stage",
+            {
+                "stage": "keywords",
+                "status": "done",
+                "info": {"keywords": keywords},
+            },
+        )
+
+    # --- 2. Competitor research (real SERP + fetched top pages) ----------- #
+    if start_idx <= STAGES.index("competitors"):
+        if _stop():
+            return
+        yield _ev("stage", {"stage": "competitors", "status": "start"})
+        if keywords is None:
+            keywords = research_keywords(brief)
+        research_norm = enrich_with_competitor_pages(gather_research(brief), keywords)
         db.add(
             Research(
                 project_id=project.id,
@@ -233,25 +287,28 @@ def stream_full_pipeline(
                 sources=research_norm.get("sources"),
                 intent=research_norm.get("intent"),
                 provider=research_norm.get("provider", "mock"),
+                keywords=research_norm.get("keywords"),
+                competitors=research_norm.get("competitors"),
             )
         )
         db.commit()
         yield _ev(
             "stage",
             {
-                "stage": "research",
+                "stage": "competitors",
                 "status": "done",
                 "info": {
                     "provider": research_norm.get("provider"),
                     "intent": research_norm.get("intent"),
                     "serp_results": len(research_norm.get("serp") or []),
+                    "pages_analyzed": len(research_norm.get("competitors") or []),
                     "paa": len(research_norm.get("paa") or []),
                     "sources": len(research_norm.get("sources") or []),
                 },
             },
         )
         if gated:
-            g = _GATES["research"]
+            g = _GATES["competitors"]
             project.checkpoints = touch_stage(project.checkpoints, g["checkpoint"])
             db.commit()
             yield _ev(
@@ -261,6 +318,8 @@ def stream_full_pipeline(
             return
     else:
         research_norm = _load_research(db, project, brief)
+        if research_norm.get("keywords"):
+            keywords = research_norm["keywords"]
 
     # --- 2. Council debate + Judge (PRD §8), streamed per seat ----------- #
     if start_idx <= STAGES.index("council"):
@@ -533,20 +592,12 @@ def stream_full_pipeline(
                 )
             elif akind == "done":
                 draft_payload = aev["draft"]
-        next_version = (
-            db.scalar(
-                select(func.coalesce(func.max(Draft.version), 0)).where(
-                    Draft.project_id == project.id
-                )
-            )
-            or 0
-        ) + 1
         draft_row = Draft(
             project_id=project.id,
             outline_id=outline_row.id if outline_row else None,
             sections=draft_payload.get("sections"),
             word_count=draft_payload.get("word_count", 0),
-            version=next_version,
+            version=_next_draft_version(db, project),
         )
         db.add(draft_row)
         db.commit()
@@ -562,10 +613,68 @@ def stream_full_pipeline(
                 },
             },
         )
+    else:
+        draft_payload, draft_row = _load_draft(db, project)
+
+    # --- 5. SEO polish (humanize + keyword discipline + meta pack) -------- #
+    # A senior-editor rewrite of every section (kills AI patterns, enforces
+    # answer-first openings and natural keyword placement) plus the meta pack.
+    # The polished text is what gets fact-checked, scored and signed off.
+    seo_meta: dict | None = draft_row.seo if draft_row is not None else None
+    if start_idx <= STAGES.index("polish"):
+        if _stop():
+            return
+        yield _ev("stage", {"stage": "polish", "status": "start"})
+        polished = draft_payload
+        changed = 0
+        for pev in stream_polish(draft_payload, brief, research_norm):
+            if pev["kind"] == "section_done":
+                yield _ev(
+                    "section_done",
+                    {
+                        "index": pev["index"],
+                        "heading": pev["heading"],
+                        "level": pev["level"],
+                        "markdown": pev["markdown"],
+                    },
+                )
+            elif pev["kind"] == "done":
+                polished = pev["draft"]
+                changed = pev["changed"]
+        seo_meta = generate_seo_meta(polished, brief, research_norm)
+        if changed:
+            # Persist the polish as a new version so the writer draft stays
+            # diffable; downstream checks run on the polished text.
+            draft_payload = polished
+            draft_row = Draft(
+                project_id=project.id,
+                outline_id=outline_row.id if outline_row else None,
+                sections=polished.get("sections"),
+                word_count=polished.get("word_count", 0),
+                version=_next_draft_version(db, project),
+                seo=seo_meta,
+            )
+            db.add(draft_row)
+        elif draft_row is not None:
+            draft_row.seo = seo_meta
+        db.commit()
+        yield _ev("seo_meta", {"seo": seo_meta})
+        yield _ev(
+            "stage",
+            {
+                "stage": "polish",
+                "status": "done",
+                "info": {
+                    "changed_sections": changed,
+                    "title": (seo_meta or {}).get("title", ""),
+                    "word_count": draft_payload.get("word_count", 0),
+                },
+            },
+        )
 
         if gated:
-            # Pause for human sign-off on the finished draft before scoring/publish.
-            g = _GATES["article"]
+            # Pause for human sign-off on the finished, polished draft.
+            g = _GATES["polish"]
             project.checkpoints = touch_stage(project.checkpoints, g["checkpoint"])
             db.commit()
             yield _ev(
@@ -573,12 +682,44 @@ def stream_full_pipeline(
                 {"stage": g["checkpoint"], "next": g["next"], "regenerate": g["regenerate"], "project_id": project.id},
             )
             return
-    else:
-        draft_payload, draft_row = _load_draft(db, project)
 
-    # --- 5. Fact Checker (PRD §9) ---------------------------------------- #
+    # --- 6. Fact Checker (PRD §9) ---------------------------------------- #
     yield _ev("stage", {"stage": "factcheck", "status": "start"})
     fact = check_draft(draft_payload, research_norm, use_llm_hint=False)
+
+    # One auto-remediation pass: sections carrying high-risk unsupported claims
+    # are rewritten (attribute to a real source / soften to qualitative /
+    # delete), then re-checked — so a citation slip doesn't fail the gate.
+    auto_fixed = 0
+    if fact["high_risk_unsupported"] > 0:
+        offending = [
+            c.get("text", "")
+            for c in fact["claims"]
+            if c.get("risk") == "high" and not c.get("source")
+        ]
+        fixed_payload, changed_idx = fix_unsupported_claims(
+            draft_payload, brief, research_norm, offending
+        )
+        if changed_idx:
+            auto_fixed = len(changed_idx)
+            draft_payload = fixed_payload
+            if draft_row is not None:
+                draft_row.sections = fixed_payload.get("sections")
+                draft_row.word_count = fixed_payload.get("word_count", 0)
+                db.commit()
+            for idx in changed_idx:
+                sec = fixed_payload["sections"][idx]
+                yield _ev(
+                    "section_done",
+                    {
+                        "index": idx,
+                        "heading": sec.get("heading", ""),
+                        "level": sec.get("level", 2),
+                        "markdown": sec.get("markdown", ""),
+                    },
+                )
+            fact = check_draft(draft_payload, research_norm, use_llm_hint=False)
+
     for c in fact["claims"]:
         db.add(
             Claim(
@@ -598,6 +739,7 @@ def stream_full_pipeline(
             "info": {
                 "claims": len(fact["claims"]),
                 "high_risk_unsupported": fact["high_risk_unsupported"],
+                "auto_fixed_sections": auto_fixed,
             },
         },
     )
@@ -682,9 +824,12 @@ def stream_full_pipeline(
                 "provider": research_norm.get("provider"),
                 "intent": research_norm.get("intent"),
                 "serp_results": len(research_norm.get("serp") or []),
+                "pages_analyzed": len(research_norm.get("competitors") or []),
                 "paa": len(research_norm.get("paa") or []),
                 "sources": len(research_norm.get("sources") or []),
             },
+            "keywords": research_norm.get("keywords") or keywords,
+            "seo": seo_meta,
             "council": council_info,
             "outline_id": outline_row.id if outline_row else None,
             "draft": {

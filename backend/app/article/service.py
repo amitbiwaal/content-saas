@@ -38,31 +38,53 @@ _MAX_SECTION_WORKERS = 4
 
 
 SYSTEM_PROMPT = (
-    "You are a senior content writer for ContentOS AI (PRD §7). Write ONE section "
-    "of an article in Markdown body prose for the given heading.\n"
-    "TOPIC: the heading names a reader-facing subject. Write ABOUT that subject for "
-    "the reader. NEVER restate the heading as an instruction and NEVER write "
+    "You are an expert practitioner writing ONE section of a long-form article "
+    "that must beat the pages currently ranking on Google page one AND be worth "
+    "quoting by AI engines (ChatGPT, Perplexity, Google AI Overviews). You write "
+    "from real expertise, not summary.\n"
+    "TOPIC: the heading names a reader-facing subject. Write ABOUT that subject "
+    "for the reader. NEVER restate the heading as an instruction and NEVER write "
     "meta-commentary about SEO, structure, entities, schema, E-E-A-T, keywords or "
     "'this guide'. Write the actual subject content a reader came for.\n"
-    "VOICE: natural, human, 'we-not-I'. Vary sentence length and rhythm. Use "
-    "concrete, verifiable specifics (names, figures, steps, real examples), never "
-    "vague filler. Write like an expert who has used the thing, not a summary.\n"
-    "BANNED phrases (they read as generic AI copy, never use any): 'in conclusion', "
-    "'it's important to note', 'in today's world', 'when it comes to', 'a wide range "
-    "of', 'plays a crucial role', 'navigating the', 'in the realm of'. Never use "
-    "em-dashes; use commas or periods.\n"
+    "ANSWER-FIRST: the FIRST sentence must directly address the heading with a "
+    "concrete, useful statement. A reader (or an AI engine quoting only that "
+    "sentence) must learn something immediately. No warm-up sentences, no "
+    "restating the question.\n"
+    "EXPERIENCE (E-E-A-T): write like someone who has actually used, tested or "
+    "done this: practical observations ('in practice...', 'you'll notice...'), "
+    "tradeoffs, mistakes to avoid, who it is NOT for. Give real cons, not "
+    "marketing. Never over-promise.\n"
+    "SPECIFICITY: concrete names, figures, steps and scenarios. One vivid "
+    "specific beats three generalities. Cut every sentence that adds no new "
+    "information.\n"
+    "HUMAN RHYTHM: vary sentence length hard — some under 7 words, some long. "
+    "Use contractions. Active voice. Address the reader as 'you' where natural; "
+    "the editorial voice is 'we'. Never start consecutive sentences the same way.\n"
+    "FORMAT FOR SCANNERS: when enumerating 3+ parallel items, use a Markdown "
+    "bulleted or numbered list. When comparing options/plans/numbers, use a "
+    "compact Markdown table — and name the source of the table's figures in the "
+    "sentence that introduces it (e.g. 'specs per Wirecutter'). Bold at most ONE "
+    "key phrase per section. Keep prose paragraphs to 2-4 sentences. Never write "
+    "a wall of text.\n"
+    "BANNED phrases (they read as generic AI copy, never use any): 'in "
+    "conclusion', 'it's important to note', 'in today's world', 'when it comes "
+    "to', 'a wide range of', 'plays a crucial role', 'navigating the', 'in the "
+    "realm of', 'delve', 'unlock', 'elevate', 'game-changer', 'moreover', "
+    "'furthermore'. Never use em-dashes; use commas or periods.\n"
     "SOURCING: When 'Research sources you may cite' lists real sources, ATTRIBUTE "
     "every factual, statistical, numeric or comparative claim inline to a named "
     "source from that list (e.g. 'according to Wirecutter', 'per Tom's Guide'), and "
     "VARY which source you cite across the section — never repeat the same source on "
     "consecutive claims. Use the exact name or domain given; NEVER invent, guess or "
     "'fix' a URL, domain, vendor-doc page or source name — a source not in the list "
-    "does not exist for you. When the list says NONE were supplied, write "
-    "QUALITATIVELY from general knowledge: do not state specific figures, "
-    "percentages, prices or 'studies show' numbers you cannot attribute, and avoid "
-    "unsupported superlatives — describe ranges and tradeoffs in words instead. "
-    "Never invent statistics.\n"
-    "SEO: weave in the primary keyword and the listed entities naturally.\n"
+    "does not exist for you. Copy every source name/domain CHARACTER FOR "
+    "CHARACTER from the list (no respellings). When the list says NONE were "
+    "supplied, write QUALITATIVELY from general knowledge: do not state specific "
+    "figures, percentages, prices or 'studies show' numbers you cannot attribute, "
+    "and avoid unsupported superlatives — describe ranges and tradeoffs in words "
+    "instead. Never invent statistics.\n"
+    "SEO: weave the assigned keyword for this section in ONCE, naturally (never "
+    "force or repeat it); mention listed entities only where they genuinely fit.\n"
     "Return ONLY the body for this section (no heading line). If you reply as JSON, "
     "use the shape {\"markdown\": str}."
 )
@@ -187,6 +209,14 @@ def _extract_sections(outline: dict) -> list[dict]:
         nodes = None
     sections = _flatten_nodes(nodes if isinstance(nodes, list) else [])
     if sections:
+        # The Quick-Verdict answer block must LEAD the article (AEO/GEO): if the
+        # outline tree nested the body sections under the H1, a top-level verdict
+        # sibling flattens after them — force it to the front regardless.
+        for i, section in enumerate(sections):
+            if _section_kind(section["heading"]) == "verdict":
+                if i > 0:
+                    sections.insert(0, sections.pop(i))
+                break
         return sections
     # No usable outline — emit a single default body section so the writer still
     # produces a non-empty draft (mock-friendly).
@@ -285,29 +315,149 @@ def _feedback_line(feedback: str | None) -> str:
     )
 
 
+# --------------------------------------------------------------------------- #
+# Per-section context: keyword assignment, outline elements, competitor coverage
+# --------------------------------------------------------------------------- #
+_CTX_STOP = frozenset(
+    {"the", "a", "an", "and", "or", "for", "to", "of", "in", "on", "is", "are",
+     "with", "how", "what", "why", "your", "you", "vs", "best", "top"}
+)
+
+
+def _ctx_tokens(text: str) -> set[str]:
+    return {
+        t for t in re.findall(r"[a-z0-9]+", str(text).lower())
+        if len(t) >= 3 and t not in _CTX_STOP
+    }
+
+
+def _keyword_assignments(sections: list[dict], research: dict) -> list[str | None]:
+    """Assign one keyword per section: primary to the first body section,
+    secondaries rotated across the rest. Verdict/FAQ sections get none (their
+    format carries keywords naturally)."""
+    kw = (research or {}).get("keywords") or {}
+    primary = kw.get("primary") or ""
+    secondary = [s for s in kw.get("secondary") or [] if isinstance(s, str)]
+    plan: list[str | None] = []
+    body_seen = 0
+    sec_i = 0
+    for sec in sections:
+        if _section_kind(sec.get("heading", "")) != "body":
+            plan.append(None)
+            continue
+        body_seen += 1
+        if body_seen == 1 and primary:
+            plan.append(primary)
+        elif secondary:
+            plan.append(secondary[sec_i % len(secondary)])
+            sec_i += 1
+        else:
+            plan.append(primary or None)
+    return plan
+
+
+def _element_notes(outline: dict) -> dict[str, list[str]]:
+    """Map outline element placements (table/faq/answer_block/...) to their
+    section heading (lower-cased) so the writer executes them in-body."""
+    notes: dict[str, list[str]] = {}
+    for el in (outline or {}).get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        section = str(el.get("section") or "").strip().lower()
+        etype = str(el.get("type") or "").strip()
+        if not section or not etype:
+            continue
+        note = str(el.get("note") or "").strip()
+        label = {"answer_block": "direct answer block", "cta": "call to action"}.get(
+            etype, etype.replace("_", " ")
+        )
+        notes.setdefault(section, []).append(f"{label}" + (f" — {note}" if note else ""))
+    return notes
+
+
+def _competitor_context(heading: str, research: dict, cap: int = 3) -> str:
+    """What the ranking pages cover under headings similar to this one.
+
+    Token-overlap match against the fetched competitor pages; gives the writer
+    the coverage bar to clear ('cover this, then go deeper or differ').
+    """
+    target = _ctx_tokens(heading)
+    if not target:
+        return ""
+    hits: list[tuple[float, str]] = []
+    for page in (research or {}).get("competitors") or []:
+        if not isinstance(page, dict):
+            continue
+        domain = page.get("domain") or "a ranking page"
+        for comp_heading in page.get("headings") or []:
+            toks = _ctx_tokens(comp_heading)
+            if not toks:
+                continue
+            overlap = len(target & toks) / len(target)
+            if overlap >= 0.4:
+                hits.append((overlap, f"\"{comp_heading}\" ({domain})"))
+    if not hits:
+        return ""
+    hits.sort(key=lambda x: -x[0])
+    seen: set[str] = set()
+    top: list[str] = []
+    for _, label in hits:
+        if label in seen:
+            continue
+        seen.add(label)
+        top.append(label)
+        if len(top) >= cap:
+            break
+    return "; ".join(top)
+
+
 def _section_prompt(
     section: dict,
     brief: dict,
     all_headings: list[str],
     research: dict,
     feedback: str | None = None,
+    extra: dict | None = None,
 ) -> str:
     heading = section["heading"]
     level = section["level"]
     kind = _section_kind(heading)
+    extra = extra or {}
     context = (
         f"{_brief_summary(brief)}\n\n"
         f"Research sources you may cite:\n{_research_sources_text(research)}\n\n"
         f"Key entities to mention: {_research_entities_text(research)}\n"
         f"Full outline headings: {json.dumps(all_headings)}\n"
     )
+    if extra.get("keyword"):
+        context += f"Assigned keyword for this section (weave in once): {extra['keyword']}\n"
+    if extra.get("competitor_context"):
+        context += (
+            "What ranking pages cover under similar headings: "
+            f"{extra['competitor_context']}\n"
+            "Clear that coverage bar, then go one level deeper or add what they miss "
+            "(never copy their phrasing).\n"
+        )
+    if extra.get("elements"):
+        context += (
+            "This section MUST include: " + "; ".join(extra["elements"]) + ".\n"
+        )
+    if extra.get("word_budget"):
+        context += (
+            f"LENGTH for this section: about {extra['word_budget']} words (hard "
+            "guidance). Depth within the budget; cutting a weak point beats "
+            "padding a strong one.\n"
+        )
     tail = _feedback_line(feedback)
 
     if kind == "verdict":
         return context + (
             "\nWrite a 'Quick Verdict': a direct, snippet-ready answer of 40 to 60 "
             "words to the primary query. Start the first sentence with 'Quick "
-            "verdict:'. Be specific and balanced (a real recommendation, not hedging)."
+            "verdict:'. Be specific and balanced (a real recommendation, not "
+            "hedging). Name a specific option ONLY if it appears in the research "
+            "data above (sources/entities/SERP) — never recommend a product or "
+            "brand the research does not mention."
         ) + tail
     if kind == "faq":
         questions = _research_paa(research)
@@ -328,9 +478,17 @@ def _section_prompt(
             "(never treat the keyword phrase as a singular product name). Format each "
             "as '**<question>**' on its own line, then the answer on the next line."
         ) + tail
+    opener_note = (
+        "\nThis is the OPENING body section: hook the reader with the core "
+        "answer/promise in the first two sentences and make them trust the rest "
+        "of the article."
+        if extra.get("is_opening")
+        else ""
+    )
     return context + (
-        f"\nWrite the body for this reader-facing section only, 3 to 5 tight "
-        f"paragraphs about the topic (not about SEO or how the article is built).\n"
+        f"\nWrite the body for this reader-facing section only, 2 to 4 tight "
+        f"paragraphs about the topic (not about SEO or how the article is built), "
+        f"using a list or table where the content calls for one.{opener_note}\n"
         f"Section heading (H{level}): {heading}\n"
         "If sources are listed above, attribute each factual, numeric or comparative "
         "claim to a named source (vary the source across claims). If none are listed, "
@@ -391,6 +549,41 @@ def _strip_code_fence(text: str) -> str:
     return text.strip()
 
 
+def _section_extras(
+    parsed: list[dict], outline: dict, research: dict, brief: dict | None = None
+) -> list[dict]:
+    """Precompute each section's context pack: assigned keyword, outline element
+    placements, competitor coverage to beat, opening flag and word budget."""
+    keywords = _keyword_assignments(parsed, research)
+    notes = _element_notes(outline if isinstance(outline, dict) else {})
+
+    # Per-section word budget: without it, a many-section outline overshoots the
+    # target 2-3x (an LLM never does the division itself). Verdict/FAQ have
+    # their own formats; body sections split the target evenly, clamped sane.
+    target = (brief or {}).get("word_count")
+    n_body = sum(1 for s in parsed if _section_kind(s.get("heading", "")) == "body")
+    budget: int | None = None
+    if isinstance(target, int) and target > 0 and n_body > 0:
+        budget = max(90, min(380, round(target * 0.85 / n_body)))
+
+    extras: list[dict] = []
+    opening_marked = False
+    for i, section in enumerate(parsed):
+        heading = section.get("heading", "")
+        is_body = _section_kind(heading) == "body"
+        extra = {
+            "keyword": keywords[i],
+            "elements": notes.get(heading.strip().lower()) or [],
+            "competitor_context": _competitor_context(heading, research),
+            "is_opening": is_body and not opening_marked,
+            "word_budget": budget if is_body else None,
+        }
+        if is_body:
+            opening_marked = True
+        extras.append(extra)
+    return extras
+
+
 def _write_section_body(
     section: dict,
     brief: dict,
@@ -398,13 +591,14 @@ def _write_section_body(
     provider: str,
     research: dict,
     feedback: str | None = None,
+    extra: dict | None = None,
 ) -> str:
     """Generate one section's body via the adapter, with a heuristic fallback.
 
     Never raises: provider refusal/transport errors degrade to the deterministic
     fallback so a single failed seat cannot break the whole draft (FR-7.2).
     """
-    prompt = _section_prompt(section, brief, all_headings, research, feedback)
+    prompt = _section_prompt(section, brief, all_headings, research, feedback, extra)
     try:
         resp = get_adapter(provider).complete(
             system=SYSTEM_PROMPT, prompt=prompt, json_mode=False
@@ -427,9 +621,12 @@ def _render_section(
     provider: str,
     research: dict,
     feedback: str | None = None,
+    extra: dict | None = None,
 ) -> Section:
     body = autofix_text(
-        _write_section_body(section, brief, all_headings, provider, research, feedback)
+        _write_section_body(
+            section, brief, all_headings, provider, research, feedback, extra
+        )
     )
     return Section(heading=section["heading"], level=section["level"], markdown=body)
 
@@ -463,16 +660,22 @@ def generate_draft(
     research = research or {}
     parsed = _extract_sections(outline)
     all_headings = [s["heading"] for s in parsed]
+    extras = _section_extras(parsed, outline if isinstance(outline, dict) else {}, research, brief)
     rendered = [
-        _render_section(s, brief, all_headings, provider, research, feedback)
-        for s in parsed
+        _render_section(s, brief, all_headings, provider, research, feedback, extras[i])
+        for i, s in enumerate(parsed)
     ]
     total = sum(s.word_count() for s in rendered)
     return DraftResult(sections=rendered, word_count=total).as_dict()
 
 
 def _stream_section_body(
-    section: dict, brief: dict, all_headings: list[str], provider: str, research: dict
+    section: dict,
+    brief: dict,
+    all_headings: list[str],
+    provider: str,
+    research: dict,
+    extra: dict | None = None,
 ) -> Iterator[dict]:
     """Yield ``{"kind": "delta", "delta": str}`` token chunks for one section body.
 
@@ -480,7 +683,7 @@ def _stream_section_body(
     caller then emits deterministic fallback prose), mirroring the safety contract
     of :func:`_write_section_body` (FR-7.2).
     """
-    prompt = _section_prompt(section, brief, all_headings, research)
+    prompt = _section_prompt(section, brief, all_headings, research, None, extra)
     try:
         stream = get_adapter(provider).stream(
             system=SYSTEM_PROMPT, prompt=prompt, json_mode=False
@@ -517,6 +720,7 @@ def stream_draft(
     research = research or {}
     parsed = _extract_sections(outline)
     all_headings = [s["heading"] for s in parsed]
+    extras = _section_extras(parsed, outline if isinstance(outline, dict) else {}, research, brief)
     n = len(parsed)
     results: list[Section | None] = [None] * n
     sink: queue.Queue = queue.Queue()
@@ -531,7 +735,9 @@ def stream_draft(
         })
         try:
             try:
-                for ev in _stream_section_body(section, brief, all_headings, provider, research):
+                for ev in _stream_section_body(
+                    section, brief, all_headings, provider, research, extras[index]
+                ):
                     acc.append(ev["delta"])
                     sink.put({"kind": "section_delta", "index": index, "delta": ev["delta"]})
                 body = _parse_adapter_markdown("".join(acc))
@@ -606,8 +812,15 @@ def regenerate_section(
             f"section_index {section_index} out of range (0..{len(parsed) - 1})"
         )
     all_headings = [s["heading"] for s in parsed]
+    extras = _section_extras(parsed, outline if isinstance(outline, dict) else {}, research, brief)
     section = _render_section(
-        parsed[section_index], brief, all_headings, provider, research, feedback
+        parsed[section_index],
+        brief,
+        all_headings,
+        provider,
+        research,
+        feedback,
+        extras[section_index],
     )
     return asdict(section)
 

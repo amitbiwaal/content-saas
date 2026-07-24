@@ -134,6 +134,61 @@ class CouncilResult:
     total_tokens: int = 0
 
 
+def _research_digest(research: dict) -> str:
+    """Structured, seat-readable research summary (keywords, rivals, questions).
+
+    Replaces a raw truncated JSON dump: the seats debate real data, so the data
+    must be legible — the keyword set, each ranking competitor page with the
+    headings it actually uses, the reader questions, and the citable sources.
+    """
+    if not research:
+        return "Research: (none gathered)"
+    lines: list[str] = []
+
+    kw = research.get("keywords") or {}
+    if kw:
+        lines.append(f"PRIMARY KEYWORD: {kw.get('primary', '')}")
+        if kw.get("secondary"):
+            lines.append("Secondary keywords: " + "; ".join(kw["secondary"][:8]))
+        if kw.get("longtail"):
+            lines.append("Longtail questions: " + " | ".join(kw["longtail"][:6]))
+    if research.get("intent"):
+        lines.append(f"Search intent: {research['intent']}")
+
+    competitors = research.get("competitors") or []
+    if competitors:
+        lines.append("\nRANKING COMPETITOR PAGES (fetched + analysed):")
+        for i, page in enumerate(competitors[:6], start=1):
+            if not isinstance(page, dict):
+                continue
+            heads = "; ".join((page.get("headings") or [])[:10]) or "(no headings found)"
+            extras: list[str] = []
+            if page.get("word_count"):
+                extras.append(f"{page['word_count']} words")
+            if page.get("has_table"):
+                extras.append("has comparison table")
+            if page.get("has_faq"):
+                extras.append("has FAQ")
+            suffix = f" [{', '.join(extras)}]" if extras else ""
+            lines.append(
+                f"{i}. {page.get('domain', '?')} — \"{page.get('title', '')}\"{suffix}\n"
+                f"   Covers: {heads}"
+            )
+    elif research.get("headings"):
+        lines.append(
+            "Competitor headings: " + "; ".join(str(h) for h in research["headings"][:15])
+        )
+
+    paa = [str(q) for q in research.get("paa") or [] if str(q).strip()]
+    if paa:
+        lines.append("\nREAL READER QUESTIONS: " + " | ".join(paa[:8]))
+    sources = research.get("sources") or []
+    if sources:
+        doms = [s.get("domain") or s.get("title", "") for s in sources if isinstance(s, dict)]
+        lines.append("Citable sources: " + ", ".join(d for d in doms if d)[:400])
+    return "\n".join(lines)[:5000]
+
+
 def _brief_text(brief: dict) -> str:
     text = (
         f"Topic: {brief.get('topic')}\n"
@@ -141,8 +196,9 @@ def _brief_text(brief: dict) -> str:
         f"Country: {brief.get('country', 'US')}\n"
         f"Audience: {brief.get('audience') or 'general'}\n"
         f"Tone: {brief.get('tone') or 'neutral'}\n"
-        f"Goal: {brief.get('goal') or 'rank and be cited'}\n"
-        f"Research: {json.dumps(brief.get('research', {}))[:2000]}"
+        f"Goal: {brief.get('goal') or 'rank and be cited'}\n\n"
+        f"=== RESEARCH DATA (debate from THIS, not from generic knowledge) ===\n"
+        f"{_research_digest(brief.get('research') or {})}"
     )
     # Review mode: an editor rejected the prior council output and asked for a
     # re-run with this instruction — foreground it so every seat addresses it.

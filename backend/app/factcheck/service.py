@@ -132,6 +132,10 @@ _NEGATIVE_WORDS = (
 # Numeric / money / percent token (e.g. "20%", "$5", "5 to 7", "200+", "1,200").
 _NUMERIC_RE = re.compile(r"(?:\$\s?\d|\d[\d,\.]*\s?%|\b\d[\d,\.]*\b|\d\+)")
 
+# Alphanumeric product/model identifiers (WH-1000XM6, QC45, EG1, M4): names,
+# not quantities — stripped before the numeric test.
+_MODEL_NUMBER_RE = re.compile(r"\b[A-Za-z]+[-–]?\d[\w-]*\b")
+
 # An INLINE citation the writer attached to a claim: a URL/domain, a markdown
 # link, or an explicit "according to <Source>" / "per <Source>" attribution. A
 # claim that cites its own source is supported on its face (FR-9.2).
@@ -142,6 +146,14 @@ _INLINE_CITE_RE = re.compile(
     r"|\b\w[\w-]*\.(?:com|org|net|io|gov|edu|co)\b"
     r"|\baccording to\s+[A-Z0-9][\w .&'’-]{2,40}"
     r"|\bper\s+[A-Z0-9][\w .&'’-]{2,40}"
+    # Attribution-verb forms the writer uses: "As Wirecutter notes",
+    # "RTINGS reports", "Home Office Nomad highlights/praises/points out".
+    # (?-i:) keeps the source-name capital REQUIRED despite IGNORECASE, so
+    # "it notes that" / "as we found" never count as citations.
+    # Optional closing quote/bracket between the source name and the verb, so
+    # 'a review on "Good Housekeeping" highlights ...' still counts.
+    r"|\bas\s+(?-i:[A-Z][\w'’&.-]*(?:\s+[A-Z][\w'’&.-]*){0,3})[\"'”’)\]]{0,2}\s+(?:notes?|reports?|highlights?|says?|states?|found|finds?|observes?|points?\s+out)"
+    r"|(?-i:\b[A-Z][\w'’&.-]*(?:\s+[A-Z][\w'’&.-]*){0,3})[\"'”’)\]]{0,2}\s+(?:notes?|reports?|highlights?|praises?|recommends?|mentions?|confirms?|observes?|points?\s+out|found|finds?|states?|stated|writes?|wrote|warns?|suggests?|advises?|explains?|argues?|estimates?|predicts?|shows?)\b"
     r"|\(source:[^)]+\)",
     re.IGNORECASE,
 )
@@ -218,7 +230,12 @@ def _draft_text(draft: dict) -> str:
         elif isinstance(value, (int, float)):
             parts.append(str(value))
         elif isinstance(value, dict):
-            for key in ("heading", "title", "text", "content", "body"):
+            # Body prose only — a section HEADING is navigation, not a claim
+            # (headings like "Top Picks Under $300" false-positived as high-risk
+            # unsourced claims and blocked the gate). Note "markdown" IS
+            # included: it is the actual Draft.sections body key — without it
+            # the checker only ever saw headings.
+            for key in ("markdown", "text", "content", "body"):
                 if key in value:
                     _emit(value[key])
             for key in ("paragraphs", "sections", "items", "children"):
@@ -242,13 +259,43 @@ def _draft_text(draft: dict) -> str:
     return "\n".join(parts)
 
 
+# Markdown table rows are structured data (specs), attributed by the prose
+# introducing the table — mirror the compliance checker's treatment.
+_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
+
+# Short "Label: value" spec list items ("Capacity: 3.5 quarts", "Height:
+# Manual Crank") are structured data like table rows, not claim sentences.
+_SPEC_LINE_RE = re.compile(r"^[A-Za-z][\w /()&'-]{0,30}:\s+\S.{0,45}$")
+
+# Price-bracket / range scoping ("under $300", "between $200 and $500"): the
+# article's own scope from the brief, not an assertion about the world.
+_SCOPE_PRICE_RE = re.compile(
+    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|at)"
+    r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
+    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b",
+    re.IGNORECASE,
+)
+
+# Imperative buying-guidance openers: "Aim for at least 20 hours of battery" is
+# editorial advice, not a verifiable factual claim.
+_ADVICE_OPENER_RE = re.compile(
+    r"^\s*(?:choose|aim|look\s+for|expect|plan\s+to|pick|consider|go\s+for|"
+    r"target|opt\s+for|prioriti[sz]e|check\s+for|make\s+sure|ensure|budget)\b",
+    re.IGNORECASE,
+)
+
+
 def _split_sentences(text: str) -> list[str]:
     raw = _SENTENCE_RE.split(text)
     out: list[str] = []
     seen: set[str] = set()
     for s in raw:
+        if _TABLE_ROW_RE.match(s or ""):
+            continue
         s = s.strip().strip("-•*").strip()
         if len(s) < 8:  # drop fragments / bare headings noise
+            continue
+        if _SPEC_LINE_RE.match(s):  # "Capacity: 3.5 quarts" spec entries
             continue
         key = s.lower()
         if key in seen:
@@ -258,17 +305,61 @@ def _split_sentences(text: str) -> list[str]:
     return out
 
 
-def _classify(sentence: str) -> list[str]:
+_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _keyword_phrases(research: dict | None) -> list[str]:
+    """The article's own keyword phrases (primary + secondary), lower-cased.
+
+    A sentence whose only "superlative"/"numeric" trigger is the keyword itself
+    ("best noise cancelling headphones 2026") is using the topic phrase, not
+    asserting a claim — these phrases are stripped before classification.
+    """
+    out: list[str] = []
+    kw = (research or {}).get("keywords") or {}
+    for phrase in [kw.get("primary"), (research or {}).get("keyword"), *(kw.get("secondary") or [])]:
+        if isinstance(phrase, str) and len(phrase.strip()) >= 6:
+            out.append(phrase.strip().lower())
+    return out
+
+
+def _strip_keyword_phrases(sentence: str, phrases: list[str]) -> str:
+    low = sentence.lower()
+    for p in phrases:
+        idx = low.find(p)
+        while idx != -1:
+            sentence = sentence[:idx] + " " * len(p) + sentence[idx + len(p):]
+            low = sentence.lower()
+            idx = low.find(p)
+    return sentence
+
+
+def _classify(sentence: str, phrases: list[str] | None = None) -> list[str]:
     """Return the reasons (kinds) a sentence is a claim, or [] if it is not."""
+    if phrases:
+        sentence = _strip_keyword_phrases(sentence, phrases)
     low = sentence.lower()
     kinds: list[str] = []
 
-    if _NUMERIC_RE.search(sentence):
+    # Strip scope-pricing before the numeric test; and advice sentences whose
+    # only figure is a spec threshold are guidance, not claims.
+    numeric_probe = _SCOPE_PRICE_RE.sub(" ", sentence)
+    # Product model numbers (WH-1000XM6, EG1, X3) are names, not statistics;
+    # bare years ("in 2026") are context, not quantities.
+    numeric_probe = _MODEL_NUMBER_RE.sub(" ", numeric_probe)
+    numeric_probe = _YEAR_RE.sub(" ", numeric_probe)
+    if _ADVICE_OPENER_RE.match(sentence) and "%" not in sentence:
+        numeric_probe = ""
+    if numeric_probe and _NUMERIC_RE.search(numeric_probe):
         kinds.append("numeric")
-    if any(w in low for w in _STAT_WORDS):
+    # Whole-word match — substring matching flagged "concentrate"/"integrated"
+    # via the embedded "rate".
+    if any(re.search(rf"\b{re.escape(w)}\b", low) for w in _STAT_WORDS):
         if "statistical" not in kinds:
             kinds.append("statistical")
-    if any(re.search(rf"\b{re.escape(w)}\b", low) for w in _SUPERLATIVES):
+    # "at least"/"at most" are quantifier idioms, not superlative claims.
+    superlative_probe = re.sub(r"\bat\s+(?:least|most)\b", " ", low)
+    if any(re.search(rf"\b{re.escape(w)}\b", superlative_probe) for w in _SUPERLATIVES):
         kinds.append("superlative")
     if any(w in low for w in _NEGATIVE_WORDS):
         kinds.append("negative")
@@ -282,20 +373,22 @@ def _classify(sentence: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 # FR-9.1 — Claim extraction
 # --------------------------------------------------------------------------- #
-def extract_claims(draft: dict) -> list[dict]:
+def extract_claims(draft: dict, research: dict | None = None) -> list[dict]:
     """Extract every factual/statistical claim from a draft (FR-9.1).
 
     Heuristic: a sentence is a claim if it contains a number, ``%``, ``$``, a
-    superlative/absolute, or a statistical/negation cue. Pure and deterministic
-    — no LLM call — so extraction is stable in tests and runs with zero keys.
+    superlative/absolute, or a statistical/negation cue — AFTER the article's
+    own keyword phrases are stripped (their "best"/"2026" are topic wording,
+    not assertions). Pure and deterministic — no LLM call.
 
     Returns a list of dicts with ``text`` and ``kinds`` (why it was flagged);
     grading is applied later by :func:`grade_claim`.
     """
+    phrases = _keyword_phrases(research)
     text = _draft_text(draft)
     claims: list[dict] = []
     for sentence in _split_sentences(text):
-        kinds = _classify(sentence)
+        kinds = _classify(sentence, phrases)
         if kinds:
             claims.append({"text": sentence, "kinds": kinds})
     return claims
@@ -438,7 +531,7 @@ def grade_claim(claim_text: str, research: dict, *, use_llm_hint: bool = True) -
     pipeline passes ``False`` so scoring stays fast and fully deterministic (the
     hint is an editor-time nicety, not a batch-run cost).
     """
-    kinds = _classify(claim_text)
+    kinds = _classify(claim_text, _keyword_phrases(research))
     sources = _iter_sources(research)
     label_source, score, num_ok = _best_source(claim_text, sources)
 
@@ -526,7 +619,7 @@ def check_draft(draft: dict, research: dict, *, use_llm_hint: bool = True) -> di
     """
     graded: list[dict] = []
     high_risk_unsupported = 0
-    for claim in extract_claims(draft):
+    for claim in extract_claims(draft, research):
         result = grade_claim(claim["text"], research, use_llm_hint=use_llm_hint)
         # Preserve extraction reasons (union of both passes).
         merged_kinds = sorted(set(claim.get("kinds", [])) | set(result.get("kinds", [])))

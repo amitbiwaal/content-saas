@@ -9,8 +9,17 @@ import { api } from "./api";
 import { creditsChanged, getToken } from "./auth";
 import { PIPELINE_STAGES, type StageStatus } from "../components/PipelineStepper";
 import type {
-  Claim, Decision, DraftSection, Outline, PipelineSummary, Research, Scores, TopFix,
+  Claim, Decision, DraftSection, KeywordSet, Outline, PipelineSummary, Research,
+  Scores, SeoMeta, TopFix,
 } from "./types";
+
+// Backend stage key -> stepper step key. The four verification stages render as
+// one "Final checks" step; older runs may still emit "research"/"draft".
+export const STAGE_TO_STEP: Record<string, string> = {
+  factcheck: "checks", scoring: "checks", gate: "checks", compliance: "checks",
+  research: "competitors", draft: "article",
+};
+export const stepOf = (stage: string) => STAGE_TO_STEP[stage] || stage;
 
 // A draft section that may still be streaming tokens (live "typing").
 export type LiveSection = DraftSection & { streaming?: boolean };
@@ -39,6 +48,12 @@ export type RunState = {
   startedAt?: string;
   stages: Record<string, StageStatus>;
   research?: Research | null;
+  // Keyword-research stage output (arrives before the research row exists).
+  keywords?: KeywordSet | null;
+  // SEO-polish meta pack (title/description/slug/takeaways).
+  seoMeta?: SeoMeta | null;
+  // True while the polish stage rewrites sections in place.
+  polishing?: boolean;
   seats: SeatBox[];
   conflicts: number;
   // The threaded back-and-forth (rounds 2+), in arrival order.
@@ -176,13 +191,25 @@ export function attachRunStream(
     es.addEventListener(name, (e) => fn(JSON.parse((e as MessageEvent).data)));
 
   on("stage", (d) => {
-    update((r) => ({ ...r, stages: { ...r.stages, [d.stage]: d.status === "start" ? "running" : "done" } }));
+    const step = stepOf(d.stage);
+    update((r) => ({
+      ...r,
+      stages: { ...r.stages, [step]: d.status === "start" ? "running" : "done" },
+      ...(d.stage === "polish" ? { polishing: d.status === "start" } : {}),
+    }));
     if (d.status === "done") {
-      if (d.stage === "research") api.getResearch(projectId).then((x) => update((r) => ({ ...r, research: x }))).catch(() => {});
+      if (d.stage === "keywords" && d.info?.keywords) {
+        update((r) => ({ ...r, keywords: d.info.keywords }));
+      }
+      if (d.stage === "competitors" || d.stage === "research") {
+        api.getResearch(projectId).then((x) => update((r) => ({ ...r, research: x }))).catch(() => {});
+      }
       if (d.stage === "outline") api.getOutline(projectId).then((x) => update((r) => ({ ...r, outline: x }))).catch(() => {});
       if (d.stage === "council") update((r) => ({ ...r, strategy: d.info?.strategy_summary || r.strategy }));
     }
   });
+  // SEO-polish meta pack (title / description / slug / takeaways).
+  on("seo_meta", (d) => update((r) => ({ ...r, seoMeta: d.seo || null })));
   on("roster", (d) => update((r) => ({ ...r, seats: d.seats.map((s: SeatBox) => ({ ...s, status: "waiting" })) })));
 
   // Round 1 — opening reports, streamed into the Council Arena.
@@ -265,6 +292,9 @@ export function attachRunStream(
       ...r,
       scores: s.scores, gate: s.gate, fixes: s.top_fixes, compliance: s.compliance,
       strategy: s.council?.strategy_summary || r.strategy,
+      keywords: s.keywords || r.keywords,
+      seoMeta: s.seo || r.seoMeta,
+      polishing: false,
       judge: r.judge ? { ...r.judge, streaming: false } : r.judge,
       awaiting: null, done: true,
       stages: Object.fromEntries(PIPELINE_STAGES.map((x) => [x.key, "done"])),

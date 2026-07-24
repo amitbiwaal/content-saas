@@ -220,8 +220,25 @@ def _heo_score(text: str, words: list[str]) -> float:
     return _clamp(readability_points + length_points)
 
 
+def _verifiable(claims: list[dict]) -> list[dict]:
+    """Claims that assert something checkable (numeric/statistical/negative).
+
+    Pure-superlative flags ("the best fit for you") are editorial style notes —
+    the fact-checker lists them for a human (manual_review) but they are not
+    verifiable facts, so they must not drag the Fact/EEAT ratios down. Claims
+    with no ``kinds`` metadata are kept (conservative).
+    """
+    out: list[dict] = []
+    for c in claims:
+        kinds = set(c.get("kinds") or [])
+        if not kinds or kinds - {"superlative"}:
+            out.append(c)
+    return out
+
+
 def _eeat_score(claims: list[dict]) -> float:
-    """Trust signal: ratio of claims carrying a named source (§10)."""
+    """Trust signal: ratio of verifiable claims carrying a named source (§10)."""
+    claims = _verifiable(claims)
     if not claims:
         return 50.0  # neutral when there is nothing to source yet.
     sourced = sum(1 for c in claims if c.get("source"))
@@ -229,7 +246,8 @@ def _eeat_score(claims: list[dict]) -> float:
 
 
 def _fact_score(claims: list[dict]) -> float:
-    """Claim support ratio: sourced and not rejected (§10, FR-9)."""
+    """Verifiable-claim support ratio: sourced and not rejected (§10, FR-9)."""
+    claims = _verifiable(claims)
     if not claims:
         # Nothing to verify and nothing disproven -> pass. A neutral value below
         # the >80 Fact gate would make every claimless draft unpublishable.

@@ -205,6 +205,12 @@ class Research(TimestampMixin, Base):
     sources: Mapped[list | None] = mapped_column(JSON, nullable=True)
     intent: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider: Mapped[str] = mapped_column(String(32), default="mock")
+    # Keyword-research stage output: {"primary", "secondary": [..],
+    # "longtail": [..], "intent", "rationale"} (pipeline stage 1).
+    keywords: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Real competitor-page analysis: one entry per fetched top-ranking page —
+    # {"domain", "url", "title", "headings": [..], "word_count", ...}.
+    competitors: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="research")
 
@@ -336,6 +342,9 @@ class Draft(TimestampMixin, Base):
     sections: Mapped[list | None] = mapped_column(JSON, nullable=True)
     word_count: Mapped[int] = mapped_column(Integer, default=0)
     version: Mapped[int] = mapped_column(Integer, default=1)
+    # SEO-polish stage output: {"title", "description", "slug", "takeaways": [..]}
+    # — the meta pack the exporter/publisher uses.
+    seo: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="drafts")
     outline: Mapped["Outline | None"] = relationship(back_populates="drafts")

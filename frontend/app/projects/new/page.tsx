@@ -12,7 +12,6 @@ export default function NewProjectPage() {
   const [form, setForm] = useState({
     website: "",
     topic: "",
-    keyword: "",
     country: "US",
     audience: "",
     tone: "",
@@ -29,7 +28,13 @@ export default function NewProjectPage() {
     setBusy(true);
     setError(null);
     try {
-      const project = await api.createProject(form);
+      // Keyword stays blank on purpose: the pipeline's keyword-research stage
+      // derives the primary keyword from the description.
+      const project = await api.createProject({
+        ...form,
+        website: form.website.trim() || "unassigned",
+        keyword: "",
+      });
       router.push(`/projects/${project.id}`);
     } catch (err) {
       setError(String(err));
@@ -37,20 +42,29 @@ export default function NewProjectPage() {
     }
   }
 
-  const valid = form.website && form.topic && form.keyword;
+  const valid = form.topic.trim().length > 0;
 
   return (
     <Shell title={t("New Content Project")}>
       <form className="card form" onSubmit={submit}>
-        <p className="muted">{t("Capture the brief — Research Intelligence and the council kick off on the project page.")}</p>
-        <label>{t("Website*")}<input value={form.website} onChange={set("website")} placeholder="spicyranked.com" /></label>
-        <label>{t("Topic*")}<input value={form.topic} onChange={set("topic")} placeholder="FeetFinder Review 2026" /></label>
-        <label>{t("Primary keyword*")}<input value={form.keyword} onChange={set("keyword")} placeholder="feetfinder reviews" /></label>
+        <p className="muted">{t("Describe the article — the pipeline finds the keywords, studies competitors, debates the angle, then writes and polishes it.")}</p>
+        <label>{t("Describe your article*")}
+          <textarea
+            value={form.topic}
+            onChange={(e) => setForm({ ...form, topic: e.target.value })}
+            placeholder={t("e.g. Best standing desks for a home office in 2026 — for remote workers on a budget, honest pros and cons")}
+            rows={3}
+            maxLength={500}
+          />
+        </label>
         <div className="form-row">
+          <label>{t("Website")}<input value={form.website} onChange={set("website")} placeholder="yoursite.com" /></label>
           <label>{t("Country")}<input value={form.country} onChange={set("country")} placeholder="US" /></label>
-          <label>{t("Tone")}<input value={form.tone} onChange={set("tone")} placeholder="we-not-I" /></label>
         </div>
-        <label>{t("Audience")}<input value={form.audience} onChange={set("audience")} placeholder={t("buyers evaluating the platform")} /></label>
+        <div className="form-row">
+          <label>{t("Audience")}<input value={form.audience} onChange={set("audience")} placeholder={t("who is this for?")} /></label>
+          <label>{t("Tone")}<input value={form.tone} onChange={set("tone")} placeholder={t("e.g. friendly")} /></label>
+        </div>
         <label>{t("Goal")}<input value={form.goal} onChange={set("goal")} placeholder={t("rank on Google and appear in AI answers")} /></label>
         {error && <p className="error">{error}</p>}
         <button className="btn btn-primary" disabled={!valid || busy} type="submit">

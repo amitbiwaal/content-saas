@@ -136,18 +136,16 @@ function Section({
   );
 }
 
-// Plain-English "what's happening now" per stage — for the working indicator so
-// silent stages (outline/fact-check/scoring) and the gap after an approve don't
-// feel like nothing is happening.
+// Plain-English "what's happening now" per stepper step — for the working
+// indicator so silent stages and the gap after an approve don't feel dead.
 const WORKING_LABELS: Record<string, string> = {
-  research: "Researching the web",
-  council: "The AI experts are debating",
+  keywords: "Finding the keywords people search",
+  competitors: "Reading the pages that rank today",
+  council: "The AI experts are debating the plan",
   outline: "Building the outline",
   article: "Writing the draft",
-  factcheck: "Checking the facts",
-  scoring: "Scoring the article",
-  gate: "Running the publish check",
-  compliance: "Checking content policy",
+  polish: "Polishing for SEO & human voice",
+  checks: "Fact-checking & scoring",
 };
 
 export default function RunView({
@@ -184,11 +182,13 @@ export default function RunView({
   // Which stages are present (in pipeline order) — drives the accordion + which
   // one is "active" (auto-open).
   const SECTIONS = [
-    { key: "research", present: !!r || run.stages.research === "running" },
+    { key: "keywords", present: !!run.keywords || run.stages.keywords === "running" },
+    { key: "research", present: !!r || run.stages.competitors === "running" },
     { key: "council", present: run.seats.length > 0 },
     { key: "review", present: !!run.judge || run.decisions.length > 0 },
     { key: "outline", present: !!run.outline?.nodes?.length },
     { key: "draft", present: !!run.draft?.sections?.length },
+    { key: "polish", present: !!run.seoMeta || !!run.polishing },
     { key: "factcheck", present: run.claims.length > 0 },
     { key: "scores", present: !!run.scores },
   ].filter((s) => s.present);
@@ -268,18 +268,61 @@ export default function RunView({
         </div>
       )}
 
-      {/* ---- Research ---- */}
-      {(!!r || run.stages.research === "running") && (
+      {/* ---- Keyword research ---- */}
+      {(!!run.keywords || run.stages.keywords === "running") && (
         <Section
-          icon="🔎"
-          title={t("Research")}
+          icon="🔑"
+          title={t("Keyword research")}
+          badge={run.keywords?.intent ? <span className="tag tag-blue">{run.keywords.intent}</span> : undefined}
+          summary={run.keywords ? `${t("target")}: ${run.keywords.primary}` : undefined}
+          open={isOpen("keywords")}
+          active={activeKey === "keywords"}
+          onToggle={() => toggle("keywords", isOpen("keywords"))}
+        >
+          {!run.keywords ? (
+            <p className="muted">{t("Working out what people actually search for…")}</p>
+          ) : (
+            <div className="rgrid">
+              <div className="rblock">
+                <div className="rsub">{t("Main keyword to rank for")}</div>
+                <div className="kw-primary">{run.keywords.primary}</div>
+                {run.keywords.rationale ? <p className="muted small">{run.keywords.rationale}</p> : null}
+                {run.keywords.secondary?.length ? (
+                  <>
+                    <div className="rsub" style={{ marginTop: 10 }}>{t("Supporting keywords")}</div>
+                    <div className="chips">
+                      {run.keywords.secondary.map((k, i) => <span className="chip-e" key={i}>{k}</span>)}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+              {run.keywords.longtail?.length ? (
+                <div className="rblock">
+                  <div className="rsub">{t("Questions people search")}</div>
+                  <ul className="rlist">{run.keywords.longtail.map((q, i) => <li key={i}>{q}</li>)}</ul>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </Section>
+      )}
+
+      {/* ---- Competitor research ---- */}
+      {(!!r || run.stages.competitors === "running") && (
+        <Section
+          icon="🌐"
+          title={t("Competitor research")}
           badge={r ? <span className="tag tag-blue">{r.intent}</span> : undefined}
-          summary={r ? `${r.serp.length} ${t("sites")} · ${r.paa.length} ${t("questions")}` : undefined}
+          summary={
+            r
+              ? `${r.serp.length} ${t("sites")}${r.competitors?.length ? ` · ${r.competitors.length} ${t("pages analysed")}` : ""} · ${r.paa.length} ${t("questions")}`
+              : undefined
+          }
           open={isOpen("research")}
           active={activeKey === "research"}
           onToggle={() => toggle("research", isOpen("research"))}
         >
-          {!r ? <p className="muted">{t("Searching the web for your topic…")}</p> : (
+          {!r ? <p className="muted">{t("Reading the pages that rank for your keyword…")}</p> : (
             <div className="rgrid">
               <div className="rblock">
                 <div className="rsub">
@@ -301,6 +344,29 @@ export default function RunView({
                 </div>
               </div>
               <div className="rcol">
+                {r.competitors?.length ? (
+                  <div className="rblock">
+                    <div className="rsub">{t("What the ranking pages cover")}</div>
+                    <div className="comp-list">
+                      {r.competitors.slice(0, 6).map((c, i) => (
+                        <details className="comp-page" key={i}>
+                          <summary>
+                            <Favicon item={c} />
+                            <span className="comp-dom">{c.domain}</span>
+                            <span className="comp-meta">
+                              {c.word_count ? `${Math.round(c.word_count / 100) / 10}k ${t("words")}` : ""}
+                              {c.has_table ? ` · ${t("table")}` : ""}
+                              {c.has_faq ? ` · FAQ` : ""}
+                            </span>
+                          </summary>
+                          <ul className="rlist comp-heads">
+                            {c.headings.slice(0, 10).map((h, j) => <li key={j}>{h}</li>)}
+                          </ul>
+                        </details>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="rblock">
                   <div className="rsub">{t("Common questions people ask")} ({r.paa.length})</div>
                   <ul className="rlist">{r.paa.slice(0, 5).map((q, i) => <li key={i}>{q}</li>)}</ul>
@@ -331,7 +397,7 @@ export default function RunView({
       {run.seats.length > 0 && (
         <Section
           icon="🧠"
-          title={t("AI experts")}
+          title={t("Expert debate")}
           summary={`${run.seats.length} ${t("experts")}${run.conflicts > 0 ? ` · ${run.conflicts} ${t("disagreement")}${run.conflicts > 1 ? "s" : ""}` : ""}`}
           open={isOpen("council")}
           active={activeKey === "council"}
@@ -444,7 +510,11 @@ export default function RunView({
         <Section
           icon="✍️"
           title={t("Draft")}
-          badge={draftWriting ? <span className="pill warn">{t("writing")}…</span> : undefined}
+          badge={
+            draftWriting ? <span className="pill warn">{t("writing")}…</span>
+            : run.polishing ? <span className="pill warn">{t("polishing")}…</span>
+            : undefined
+          }
           summary={`${run.draft.sections.length} ${t("sections")} · ${run.draft.word_count || words} ${t("words")}`}
           open={isOpen("draft")}
           active={activeKey === "draft"}
@@ -464,6 +534,40 @@ export default function RunView({
           </div>
         </Section>
       ) : null}
+
+      {/* ---- SEO polish (meta pack) ---- */}
+      {(run.seoMeta || run.polishing) && (
+        <Section
+          icon="✨"
+          title={t("SEO polish")}
+          badge={run.polishing ? <span className="pill warn">{t("polishing")}…</span> : undefined}
+          summary={run.seoMeta ? run.seoMeta.title : undefined}
+          open={isOpen("polish")}
+          active={activeKey === "polish"}
+          onToggle={() => toggle("polish", isOpen("polish"))}
+        >
+          {!run.seoMeta ? (
+            <p className="muted">{t("A senior-editor pass is rewriting each section for human voice and search…")}</p>
+          ) : (
+            <div className="seo-meta">
+              <div className="rblock">
+                <div className="rsub">{t("Meta title")}</div>
+                <div className="seo-title">{run.seoMeta.title}</div>
+                <div className="rsub" style={{ marginTop: 10 }}>{t("Meta description")}</div>
+                <p className="seo-desc">{run.seoMeta.description}</p>
+                <div className="rsub" style={{ marginTop: 10 }}>{t("URL slug")}</div>
+                <code className="seo-slug">/{run.seoMeta.slug}</code>
+              </div>
+              {run.seoMeta.takeaways?.length ? (
+                <div className="rblock">
+                  <div className="rsub">{t("Key takeaways (what AI engines will quote)")}</div>
+                  <ul className="rlist">{run.seoMeta.takeaways.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                </div>
+              ) : null}
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* ---- Fact-check ---- */}
       {run.claims.length > 0 && (

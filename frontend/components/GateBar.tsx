@@ -4,10 +4,10 @@ import { useLang } from "../lib/i18n";
 
 // Plain-English title per gated stage (what you're approving).
 export const GATE_TITLES: Record<string, string> = {
-  research: "Research",
+  research: "Keyword & competitor research",
   council: "The AI experts' debate & plan",
   outline: "Article outline",
-  draft: "Article draft",
+  draft: "Polished article draft",
 };
 
 // A prominent bar that freezes the flow at a gate and asks for a decision.

@@ -4,15 +4,17 @@ import { useLang } from "../lib/i18n";
 
 export type StageStatus = "pending" | "running" | "done";
 
+// The user-facing pipeline: mirrors how a human team works. Backend emits four
+// verification stages (factcheck/scoring/gate/compliance) that all collapse
+// into the single "Final checks" step here (see STAGE_TO_STEP in lib/run.ts).
 export const PIPELINE_STAGES: { key: string; label: string }[] = [
-  { key: "research", label: "Research" },
-  { key: "council", label: "AI experts" },
+  { key: "keywords", label: "Keywords" },
+  { key: "competitors", label: "Competitors" },
+  { key: "council", label: "Debate" },
   { key: "outline", label: "Outline" },
-  { key: "article", label: "Draft" },
-  { key: "factcheck", label: "Fact-check" },
-  { key: "scoring", label: "Scoring" },
-  { key: "gate", label: "Publish check" },
-  { key: "compliance", label: "Policy check" },
+  { key: "article", label: "Write" },
+  { key: "polish", label: "Polish" },
+  { key: "checks", label: "Final checks" },
 ];
 
 export default function PipelineStepper({

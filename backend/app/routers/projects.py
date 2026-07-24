@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -96,30 +95,39 @@ class ChatIn(BaseModel):
     message: str = Field(max_length=4000)
 
 
-_STOPWORDS = {
-    "a", "an", "the", "for", "to", "of", "in", "on", "and", "or", "with",
-    "write", "create", "make", "me", "about", "review", "article", "post",
-    "blog", "targeting", "that", "ranks", "rank",
-}
-
-
-def _keyword_from(text: str) -> str:
-    """Pick a short keyword phrase from free text (heuristic fallback)."""
-    words = [w for w in re.findall(r"[A-Za-z0-9]+", text.lower()) if w not in _STOPWORDS]
-    return " ".join(words[:4]) or text.strip()[:60]
+def _int_or_none(value: object, lo: int = 100, hi: int = 10000) -> int | None:
+    try:
+        n = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return n if lo <= n <= hi else None
 
 
 def extract_brief(message: str) -> dict:
-    """Turn a free-text chat message into a content brief (guided-chat seed).
+    """Turn a free-text description into a content brief (topic-first entry).
 
-    Tries the LLM seat first (json_mode) and falls back to a deterministic
-    heuristic, so it works with zero API keys (MockAdapter → fallback). When
-    real keys are configured this yields a much richer brief.
+    The user just DESCRIBES what they want ("standing desk buying guide for
+    Indian remote workers, friendly tone, ~1500 words"); the LLM lifts out the
+    structured fields. The keyword is deliberately left blank unless the user
+    named one — the pipeline's keyword-research stage derives it properly.
+    Falls back to a deterministic heuristic with zero API keys.
     """
     system = (
-        "Extract a content brief from the user's message. Return STRICT JSON: "
+        "Extract a content brief from the user's description of the article they "
+        "want. Return STRICT JSON: "
         '{"topic": str, "keyword": str, "website": str, "audience": str, '
-        '"tone": str, "goal": str}. Use an empty string for anything not stated.'
+        '"tone": str, "goal": str, "article_type": str, "word_count": int|null, '
+        '"country": str}.\n'
+        "- topic: a clean one-line statement of what the article is about "
+        "(preserve the user's language; not a title, not the whole message).\n"
+        "- keyword: ONLY if the user explicitly named a target keyword/search "
+        "phrase; otherwise empty string (keyword research happens later).\n"
+        "- article_type: one of Review/Buying guide/Listicle/How-to/Comparison/"
+        "Versus/Ultimate guide/Tutorial/Explainer/Case study/Roundup/"
+        "Alternatives/FAQ/Checklist/Opinion or '' if unclear.\n"
+        "- word_count: only if the user stated a target length, else null.\n"
+        "- country: 2-letter market code if stated (e.g. IN, US), else ''.\n"
+        "Use an empty string for anything not stated."
     )
     try:
         resp = get_adapter("anthropic").complete(
@@ -128,25 +136,30 @@ def extract_brief(message: str) -> dict:
         data = json.loads(resp.text)
         if isinstance(data, dict) and (data.get("topic") or "").strip():
             return {
-                "topic": str(data.get("topic")).strip(),
-                "keyword": str(data.get("keyword") or "").strip()
-                or _keyword_from(str(data.get("topic"))),
+                "topic": str(data.get("topic")).strip()[:500],
+                "keyword": str(data.get("keyword") or "").strip(),
                 "website": str(data.get("website") or "").strip() or "unassigned",
                 "audience": str(data.get("audience") or "").strip() or None,
                 "tone": str(data.get("tone") or "").strip() or None,
                 "goal": str(data.get("goal") or "").strip() or None,
+                "article_type": str(data.get("article_type") or "").strip() or None,
+                "word_count": _int_or_none(data.get("word_count")),
+                "country": (str(data.get("country") or "").strip().upper() or "US")[:8],
             }
     except (ProviderError, json.JSONDecodeError, TypeError, AttributeError):
         pass
 
     topic = message.strip()
     return {
-        "topic": topic[:200] or "Untitled brief",
-        "keyword": _keyword_from(topic),
+        "topic": topic[:500] or "Untitled brief",
+        "keyword": "",
         "website": "unassigned",
         "audience": None,
         "tone": None,
         "goal": None,
+        "article_type": None,
+        "word_count": None,
+        "country": "US",
     }
 
 
@@ -193,9 +206,12 @@ def create_from_message(
         website=brief["website"],
         topic=brief["topic"],
         keyword=brief["keyword"],
+        country=brief.get("country") or "US",
         audience=brief["audience"],
         tone=brief["tone"],
         goal=brief["goal"],
+        article_type=brief.get("article_type"),
+        word_count=brief.get("word_count"),
         stage="research",
     )
     db.add(project)
@@ -268,6 +284,8 @@ def run_project_council(
             "entities": research.entities or [],
             "sources": research.sources or [],
             "intent": research.intent,
+            "keywords": research.keywords or None,
+            "competitors": research.competitors or [],
         }
         if research
         else {}

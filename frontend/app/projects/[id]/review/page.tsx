@@ -16,10 +16,12 @@ import type { Checkpoints, GatedStage } from "../../../../lib/types";
 // Every content step is gated (checkpoint key → behaviour); the "draft" gate
 // resumes at "factcheck" and regenerates via the "article" stage.
 const GATE_META: Record<string, { next: string; regenerate: string; title: string }> = {
-  research: { next: "council", regenerate: "research", title: "Research" },
+  // "research" covers keywords + competitor research; regenerating restarts at
+  // the keywords stage. The draft gate sits after the SEO polish.
+  research: { next: "council", regenerate: "keywords", title: "Keyword & competitor research" },
   council: { next: "outline", regenerate: "council", title: "Council debate & strategy" },
   outline: { next: "article", regenerate: "outline", title: "Article outline" },
-  draft: { next: "factcheck", regenerate: "article", title: "Article draft" },
+  draft: { next: "factcheck", regenerate: "article", title: "Article draft (polished)" },
 };
 
 // Rebuild a RunState from persisted artifacts so a page reload mid-flow shows
@@ -35,7 +37,12 @@ async function hydrate(id: string, checkpoints: Checkpoints): Promise<RunState> 
     api.getScores(id).catch(() => []),
   ]);
 
-  if (research) { r.research = research; r.stages.research = "done"; }
+  if (research) {
+    r.research = research;
+    r.keywords = research.keywords || null;
+    r.stages.keywords = "done";
+    r.stages.competitors = "done";
+  }
   if (debate) {
     r.seats = (debate.reports || []).map((rep) => ({
       role: rep.role, provider: rep.provider, status: "done" as const,
@@ -233,7 +240,7 @@ const STEP_LABEL: Record<string, string> = {
 
 function ReviewSteps({ run, t }: { run: RunState; t: (s: string) => string }) {
   const hasData: Record<string, boolean> = {
-    research: !!run.research || run.stages.research === "done",
+    research: !!run.research || run.stages.competitors === "done",
     council: run.seats.length > 0,
     outline: !!run.outline,
     draft: !!(run.draft?.sections?.length),

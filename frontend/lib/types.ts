@@ -153,9 +153,12 @@ export type PipelineSummary = {
     provider: string;
     intent: string;
     serp_results: number;
+    pages_analyzed?: number;
     paa: number;
     sources: number;
   };
+  keywords?: KeywordSet | null;
+  seo?: SeoMeta | null;
   council: {
     reports: number;
     conflicts: number;
@@ -205,6 +208,32 @@ export type SectionDiff = {
 export type SerpItem = { rank?: number; title: string; url?: string; domain?: string; snippet?: string; favicon?: string };
 export type EntityItem = { name: string; type?: string; salience?: number };
 export type SourceItem = { title: string; url?: string; trust?: string; favicon?: string; domain?: string };
+// Keyword-research stage output (pipeline stage 1).
+export type KeywordSet = {
+  primary: string;
+  secondary: string[];
+  longtail: string[];
+  intent?: string;
+  rationale?: string;
+};
+// One fetched + analysed top-ranking page (pipeline stage 2).
+export type CompetitorPage = {
+  domain: string;
+  url: string;
+  title: string;
+  h1?: string;
+  headings: string[];
+  word_count?: number;
+  has_table?: boolean;
+  has_faq?: boolean;
+};
+// SEO-polish stage meta pack.
+export type SeoMeta = {
+  title: string;
+  description: string;
+  slug: string;
+  takeaways: string[];
+};
 export type Research = {
   id?: string;
   serp: SerpItem[];
@@ -214,6 +243,8 @@ export type Research = {
   sources: SourceItem[];
   intent: string;
   provider: string;
+  keywords?: KeywordSet | null;
+  competitors?: CompetitorPage[] | null;
 };
 
 export type Integrations = {

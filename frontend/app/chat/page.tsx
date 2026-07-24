@@ -50,16 +50,17 @@ export default function ChatPage() {
   // approval (same engine as the /review page, surfaced right here in chat).
   const [mode, setMode] = useState<"auto" | "gated">("auto");
   const [feedback, setFeedback] = useState("");
-  // Empty by default — the user types their own topic. "Try a sample" fills a
-  // neutral example on demand, so nothing runs by accident.
+  // Empty by default — the user DESCRIBES their article in plain language (the
+  // pipeline derives the keyword itself). "Try a sample" fills an example on
+  // demand, so nothing runs by accident.
   const [d, setD] = useState({
-    topic: "", keyword: "", website: "", country: "US",
+    topic: "", website: "", country: "US",
     audience: "", tone: "", goal: "", link: "",
   });
   function fillSample() {
     setD({
-      topic: "Best standing desks for a home office in 2026",
-      keyword: "best standing desks",
+      topic:
+        "Best standing desks for a home office in 2026 — for remote workers comparing options under $600. Practical, honest, with real pros and cons.",
       website: "",
       country: "US",
       audience: "remote workers setting up a home office",
@@ -198,7 +199,7 @@ export default function ChatPage() {
   function stop() { esRef.current?.close(); setBusy(false); }
 
   function clearBrief() {
-    setD({ topic: "", keyword: "", website: "", country: "US", audience: "", tone: "", goal: "", link: "" });
+    setD({ topic: "", website: "", country: "US", audience: "", tone: "", goal: "", link: "" });
     setFormat("");
     setWords("");
   }
@@ -220,7 +221,9 @@ export default function ChatPage() {
     const brief = {
       website: d.website.trim() || "unassigned",
       topic: d.topic.trim(),
-      keyword: d.keyword.trim() || d.topic.trim(),
+      // Deliberately blank: the pipeline's keyword-research stage derives the
+      // primary keyword from the description (and shows its reasoning).
+      keyword: "",
       country: d.country.trim() || "US",
       audience: d.audience.trim() || null,
       tone: d.tone.trim() || null,
@@ -228,8 +231,9 @@ export default function ChatPage() {
       word_count: words ? parseInt(words, 10) : null,
       goal: [d.link.trim() ? `Reference: ${d.link.trim()}` : "", d.goal.trim(), free].filter(Boolean).join(" · ") || null,
     };
+    const shortTopic = brief.topic.length > 120 ? `${brief.topic.slice(0, 117)}…` : brief.topic;
     const summary =
-      `📋 ${brief.topic}  ·  kw: ${brief.keyword}` +
+      `📋 ${shortTopic}` +
       (brief.article_type ? `  ·  ${brief.article_type}` : "") +
       (brief.word_count ? `  ·  ~${brief.word_count} words` : "") +
       (brief.tone ? `  ·  tone: ${brief.tone}` : "") +
@@ -257,8 +261,8 @@ export default function ChatPage() {
         <div className="thread">
           {messages.length === 0 && (
             <div className="welcome">
-              <h2>{tr("What article should we write for you?")}</h2>
-              <p className="muted">{tr("Type a topic. We research the web, write a full draft, and score it — right here. Takes about 2 minutes, and nothing is published.")}</p>
+              <h2>{tr("Describe the article you want")}</h2>
+              <p className="muted">{tr("Just describe it — we find the keywords, study the pages that rank, debate the best angle, then write and polish a draft. Nothing is published.")}</p>
             </div>
           )}
 
@@ -292,42 +296,25 @@ export default function ChatPage() {
 
         {messages.length === 0 && (
           <div className="brief-form">
-            {/* The one field you must fill */}
-            <label className="bf-field bf-topic"><span className="bf-lbl">{tr("What's the article about?")} <em>*</em></span>
-              <textarea value={d.topic} onChange={(e) => setD({ ...d, topic: e.target.value })} placeholder={tr("e.g. Best standing desks for a home office in 2026")} rows={1} />
+            {/* The ONE field you must fill: describe the article in your words.
+                Keyword research happens in the pipeline — no keyword box. */}
+            <label className="bf-field bf-topic"><span className="bf-lbl">{tr("Describe your article")} <em>*</em></span>
+              <textarea
+                value={d.topic}
+                onChange={(e) => setD({ ...d, topic: e.target.value })}
+                placeholder={tr("e.g. Best standing desks for a home office in 2026 — for remote workers on a budget. Honest comparisons, real pros and cons.")}
+                rows={3}
+                maxLength={500}
+              />
+              <span className="bf-hint">{tr("Topic + who it's for + the angle. We'll find the keywords for you.")}</span>
             </label>
 
-            {/* Optional details — shown directly (no collapse) */}
             <div className="bf-detrow">
               <span className="bf-detlabel">{tr("Details")} <span className="bf-detopt">{tr("(optional)")}</span></span>
               <button className="bf-sample" onClick={fillSample} type="button">{tr("Try a sample")}</button>
             </div>
 
             <div className="bf-details">
-                <div className="bf-grid">
-                  <label className="bf-field">{tr("Primary keyword")}
-                    <input value={d.keyword} onChange={(e) => setD({ ...d, keyword: e.target.value })} placeholder={tr("what people search for")} />
-                  </label>
-                  <label className="bf-field">{tr("Your website")}
-                    <input value={d.website} onChange={(e) => setD({ ...d, website: e.target.value })} placeholder="yoursite.com" />
-                  </label>
-                  <label className="bf-field">{tr("Country")}
-                    <span className="bf-select"><input list="dl-country" value={d.country} onChange={(e) => setD({ ...d, country: e.target.value })} /></span>
-                  </label>
-                  <label className="bf-field">{tr("Audience")}
-                    <input value={d.audience} onChange={(e) => setD({ ...d, audience: e.target.value })} placeholder={tr("who is this for?")} />
-                  </label>
-                  <label className="bf-field">{tr("Tone")}
-                    <span className="bf-select"><input list="dl-tone" value={d.tone} onChange={(e) => setD({ ...d, tone: e.target.value })} placeholder={tr("e.g. friendly")} /></span>
-                  </label>
-                  <label className="bf-field">{tr("Goal")}
-                    <span className="bf-select"><input list="dl-goal" value={d.goal} onChange={(e) => setD({ ...d, goal: e.target.value })} placeholder={tr("rank on Google + AI answers")} /></span>
-                  </label>
-                  <label className="bf-field bf-wide">{tr("Reference link")}
-                    <input type="url" value={d.link} onChange={(e) => setD({ ...d, link: e.target.value })} placeholder="https://competitor.com/post" />
-                  </label>
-                </div>
-
                 <div className="bf-chiprow">
                   <span className="bf-chiplabel">{tr("Format")}</span>
                   {(showAllFormats ? FORMATS : FORMATS.slice(0, 8)).map((f) => <button key={f} className={`bf-chip ${format === f ? "on" : ""}`} onClick={() => setFormat(format === f ? "" : f)}>{tr(f)}</button>)}
@@ -347,6 +334,31 @@ export default function ChatPage() {
                     </button>
                   ))}
                 </div>
+
+                {/* Rarely-needed fields live behind one collapsed row */}
+                <details className="bf-adv">
+                  <summary>{tr("More options")} · {tr("audience, tone, country, website")}</summary>
+                  <div className="bf-grid">
+                    <label className="bf-field">{tr("Audience")}
+                      <input value={d.audience} onChange={(e) => setD({ ...d, audience: e.target.value })} placeholder={tr("who is this for?")} />
+                    </label>
+                    <label className="bf-field">{tr("Tone")}
+                      <span className="bf-select"><input list="dl-tone" value={d.tone} onChange={(e) => setD({ ...d, tone: e.target.value })} placeholder={tr("e.g. friendly")} /></span>
+                    </label>
+                    <label className="bf-field">{tr("Country")}
+                      <span className="bf-select"><input list="dl-country" value={d.country} onChange={(e) => setD({ ...d, country: e.target.value })} /></span>
+                    </label>
+                    <label className="bf-field">{tr("Your website")}
+                      <input value={d.website} onChange={(e) => setD({ ...d, website: e.target.value })} placeholder="yoursite.com" />
+                    </label>
+                    <label className="bf-field">{tr("Goal")}
+                      <span className="bf-select"><input list="dl-goal" value={d.goal} onChange={(e) => setD({ ...d, goal: e.target.value })} placeholder={tr("rank on Google + AI answers")} /></span>
+                    </label>
+                    <label className="bf-field">{tr("Reference link")}
+                      <input type="url" value={d.link} onChange={(e) => setD({ ...d, link: e.target.value })} placeholder="https://competitor.com/post" />
+                    </label>
+                  </div>
+                </details>
               </div>
 
             <div className="bf-mode" role="group" aria-label={tr("Run mode")}>
@@ -382,7 +394,7 @@ export default function ChatPage() {
                 {mode === "gated" ? tr("Start — I'll approve each step") : tr("Write my article")}
               </button>
             </div>
-            <p className="bf-cta-note">{tr("~2 min · researches your topic, writes a draft, and scores it · nothing is published")}</p>
+            <p className="bf-cta-note">{tr("~3 min · keywords → competitors → debate → outline → write → polish → checks · nothing is published")}</p>
 
             <datalist id="dl-country"><option value="US" /><option value="UK" /><option value="IN" /><option value="CA" /><option value="AU" /><option value="Global" /></datalist>
             <datalist id="dl-tone">{TONES.map((t) => <option key={t} value={t} />)}</datalist>

@@ -128,12 +128,23 @@ _CITATION_RE = re.compile(
     # "per" only counts as attribution before a Capitalised source name
     # (per Reuters/Statista) — NOT "per month/user/year", which are statistics.
     r"|\baccording to\b|\bper\s+(?-i:[A-Z])|\bsource:|\bcited\b|\breported by\b"
+    # Attribution-verb phrasing ("Wirecutter notes", "RTINGS points out", or a
+    # split-off "Points out that ..." whose subject sits in the prior sentence).
+    r"|\b(?:notes?|reports?|highlights?|states?|praises?|points?\s+out|observes?)\s+that\b"
+    r"|(?-i:\b[A-Z][\w'’&.-]*(?:\s+[A-Z][\w'’&.-]*){0,3})[\"'”’)\]]{0,2}\s+(?:notes?|reports?|highlights?|states?|praises?|recommends?|mentions?|points?\s+out|observes?|found|finds?|warns?|suggests?)\b"
     r"|\bnofollow\b|\[[^\]]+\]\([^)]+\)",  # markdown link
     re.IGNORECASE,
 )
 
 # Sentence splitter (shared style with the fact-checker §9.9).
 _SENTENCE_RE = re.compile(r"(?<=[.!?])\s+|\n+")
+
+# Markdown table markup: a separator row is pure syntax (|---|---|) and must
+# never be treated as prose (its "--" runs are not em-dashes); a data row
+# (|cell|cell|) is structured data whose figures are attributed by the
+# surrounding prose, not per-cell.
+_TABLE_SEPARATOR_RE = re.compile(r"^\s*\|?[\s|:\-]+\|?\s*$")
+_TABLE_ROW_RE = re.compile(r"^\s*\|.*\|\s*$")
 
 
 # --------------------------------------------------------------------------- #
@@ -188,19 +199,57 @@ def _draft_text(draft: Any) -> str:
 
 
 def _split_sentences(text: str) -> list[str]:
-    """Split flattened prose into trimmed, non-empty sentences."""
+    """Split flattened prose into trimmed, non-empty sentences.
+
+    Markdown table separator rows (pure ``|---|`` markup) are dropped — they are
+    syntax, not prose, and their dash runs would false-positive the em-dash rule
+    now that drafts legitimately contain comparison tables.
+    """
     out: list[str] = []
     for raw in _SENTENCE_RE.split(text):
+        if _TABLE_SEPARATOR_RE.match(raw or ""):
+            continue
         s = raw.strip().strip("-•*").strip()
         if s:
             out.append(s)
     return out
 
 
+def _is_table_row(sentence: str) -> bool:
+    """True for a Markdown table data row (structured data, not a sentence)."""
+    return bool(_TABLE_ROW_RE.match(sentence))
+
+
+# Price-bracket scoping ("under $500", "up to $300"): defines the article's
+# scope (usually straight from the user's own brief/keyword), not an assertion
+# about the world — a bare "costs $299" is still a claim needing a source.
+_SCOPE_PRICE_RE = re.compile(
+    r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|at)"
+    r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
+    # Price ranges are budget guidance, not a verifiable fact:
+    # "between $200 and $500", "$200 to $500", "from $200-$500".
+    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b",
+    re.IGNORECASE,
+)
+
+
+# Imperative buying-guidance openers: "Aim for at least 20 hours of battery" is
+# editorial advice, not a factual claim needing a citation (mirrors factcheck).
+_ADVICE_OPENER_RE = re.compile(
+    r"^\s*(?:choose|aim|look\s+for|expect|plan\s+to|pick|consider|go\s+for|"
+    r"target|opt\s+for|prioriti[sz]e|check\s+for|make\s+sure|ensure|budget|try)\b",
+    re.IGNORECASE,
+)
+
+
 def _is_statistical(sentence: str) -> bool:
     """True if the sentence makes a statistical/quantitative claim (PRD §11)."""
+    sentence = _SCOPE_PRICE_RE.sub(" ", sentence)
     if re.search(r"\d+(?:\.\d+)?\s*%|\$\s?\d", sentence):
         return True
+    # Imperative advice with a spec threshold is guidance, not a claim.
+    if _ADVICE_OPENER_RE.match(sentence):
+        return False
     # A bare number plus a quantity/measure cue counts as statistical.
     if re.search(r"\b\d[\d,]*(?:\.\d+)?\b", sentence) and re.search(
         r"\b(?:percent|users?|customers?|people|times|days?|hours?|years?|"
@@ -243,6 +292,15 @@ def check(draft: Any, rules: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = _merge_rules(rules)
     text = _draft_text(draft)
     sentences = _split_sentences(text)
+    # Section headings are navigation, not claims — they stay in the pool for
+    # the style rules (em-dash, voice) but never flag as unsourced claims.
+    headings: set[str] = set()
+    if isinstance(draft, dict):
+        for sec in draft.get("sections") or []:
+            if isinstance(sec, dict):
+                h = str(sec.get("heading") or sec.get("title") or "").strip()
+                if h:
+                    headings.add(h)
 
     violations: list[dict[str, Any]] = []
 
@@ -283,11 +341,19 @@ def check(draft: Any, rules: dict[str, Any] | None = None) -> dict[str, Any]:
         _add("faqpage_claim", hits)
 
     # --- unsourced_claim (negative or statistical without a source) ------ #
+    # Table data rows are structured data: their figures are attributed by the
+    # prose introducing the table (the writer is instructed to name the source
+    # there), so only a NEGATIVE claim inside a table cell still flags.
     if _enabled("unsourced_claim"):
         hits = [
             s
             for s in sentences
-            if (_is_statistical(s) or _NEGATIVE_RE.search(s)) and not _has_citation(s)
+            if s not in headings
+            and not _has_citation(s)
+            and (
+                _NEGATIVE_RE.search(s)
+                or (_is_statistical(s) and not _is_table_row(s))
+            )
         ]
         _add("unsourced_claim", hits)
 

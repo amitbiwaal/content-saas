@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Outline, Project, Research
 from app.research.competitors import analyze_competitors
-from app.research.service import gather_research
+from app.research.service import gather_full_research
 from app.review import touch_stage
 
 router = APIRouter(prefix="/api/projects", tags=["research"])
@@ -57,6 +57,10 @@ class ResearchOut(BaseModel):
     sources: list | None = Field(default=None)
     intent: str | None = None
     provider: str
+    # Keyword-research output ({primary, secondary, longtail, intent, rationale})
+    # and the fetched competitor-page analysis (pipeline stages 1-2).
+    keywords: dict | None = Field(default=None)
+    competitors: list | None = Field(default=None)
     created_at: datetime
     updated_at: datetime
 
@@ -89,7 +93,12 @@ def run_research(
     if not project:
         raise HTTPException(status_code=404, detail="project not found")
 
-    data = gather_research(_project_brief(project))
+    data = gather_full_research(_project_brief(project))
+    # Persist a derived primary keyword so downstream stages see it (the form no
+    # longer forces one).
+    derived = ((data.get("keywords") or {}).get("primary") or "").strip()
+    if derived and not (project.keyword or "").strip():
+        project.keyword = derived[:255]
 
     research = Research(
         project_id=project.id,
@@ -100,6 +109,8 @@ def run_research(
         sources=data["sources"],
         intent=data["intent"],
         provider=data["provider"],
+        keywords=data.get("keywords"),
+        competitors=data.get("competitors"),
     )
     db.add(research)
 

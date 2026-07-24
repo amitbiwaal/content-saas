@@ -79,3 +79,59 @@ def gather_research(
         normalised["search_volume"] = raw["search_volume"]
 
     return normalised
+
+
+def enrich_with_competitor_pages(research_norm: dict, keywords: dict | None) -> dict:
+    """Overlay REAL competitor-page structure + the keyword set onto research.
+
+    Downloads the top SERP pages (:mod:`app.research.fetcher`) and replaces the
+    templated ``headings`` with what those pages actually cover; attaches the
+    per-page analysis as ``competitors`` and the keyword-research output as
+    ``keywords``. Longtail questions top up a thin ``paa`` list so the FAQ is
+    never built from guesses when real queries exist. Never raises — offline the
+    research passes through unchanged (mock contract).
+    """
+    from app.research.fetcher import competitor_headings, fetch_competitor_pages
+
+    # Only fetch pages a real provider actually found — the mock SERP fabricates
+    # example*.com URLs that don't exist (and tests must stay offline).
+    pages: list = []
+    if research_norm.get("provider") != "mock":
+        try:
+            pages = fetch_competitor_pages(research_norm.get("serp") or [])
+        except Exception:  # noqa: BLE001 - resilience boundary (never break the run)
+            pages = []
+    if pages:
+        research_norm["competitors"] = pages
+        real_headings = competitor_headings(pages)
+        if real_headings:
+            research_norm["headings"] = real_headings
+    else:
+        research_norm.setdefault("competitors", [])
+
+    if keywords:
+        research_norm["keywords"] = keywords
+        # Prefer the derived intent when the provider only guessed heuristically.
+        if keywords.get("intent") in _VALID_INTENTS:
+            research_norm["intent"] = keywords["intent"]
+        longtail = [q for q in keywords.get("longtail") or [] if isinstance(q, str)]
+        if longtail:
+            seen = {str(q).strip().lower() for q in research_norm.get("paa") or []}
+            merged = list(research_norm.get("paa") or [])
+            merged.extend(q for q in longtail if q.strip().lower() not in seen)
+            research_norm["paa"] = merged[:10]
+    return research_norm
+
+
+def gather_full_research(brief: dict) -> dict:
+    """One-call research: keywords + real SERP + fetched competitor pages.
+
+    Used by the standalone research endpoint so a manual (re)run produces the
+    same enriched artifact as the two pipeline stages combined.
+    """
+    from app.research.keywords import research_keywords
+
+    keywords = research_keywords(brief)
+    resolved = {**brief, "keyword": (brief.get("keyword") or keywords.get("primary") or "")}
+    research_norm = gather_research(resolved)
+    return enrich_with_competitor_pages(research_norm, keywords)

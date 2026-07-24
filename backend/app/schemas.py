@@ -15,11 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field
 # Projects
 # --------------------------------------------------------------------------- #
 class ProjectCreate(BaseModel):
-    """New Content Project brief (PRD §9.3 / FR-3.1)."""
+    """New Content Project brief (PRD §9.3 / FR-3.1).
 
-    website: str
+    ``keyword`` is optional: when blank, the pipeline's keyword-research stage
+    derives the primary keyword from the topic description and persists it.
+    """
+
+    website: str = "unassigned"
     topic: str
-    keyword: str
+    keyword: str = ""
     country: str = "US"
     audience: str | None = None
     tone: str | None = None
