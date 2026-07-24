@@ -126,6 +126,52 @@ def test_critique_draft_mock_is_noop():
     assert critique_draft(draft, {"topic": "t"}, {}) == []
 
 
+def test_fabricated_table_prices_flag_when_evidence_exists():
+    from app.factcheck.service import check_draft
+
+    draft = {
+        "sections": [
+            {
+                "heading": "Prices",
+                "level": 2,
+                "markdown": (
+                    "Options below.\n\n"
+                    "| Model | Price |\n|-------|-------|\n"
+                    "| K552 | $60 |\n| C1 | $90 |\n"
+                ),
+            }
+        ]
+    }
+    research_with_bank = {
+        "facts": {"facts": [{"text": "The C1 costs $90 at launch.", "source": "ex.com"}]},
+        "competitors": [],
+    }
+    fact = check_draft(draft, research_with_bank, use_llm_hint=False)
+    # $90 is in the evidence; $60 is fabricated → exactly one table row flags.
+    table_flags = [c for c in fact["claims"] if "table" in (c.get("kinds") or [])]
+    assert len(table_flags) == 1 and "$60" in table_flags[0]["text"]
+    assert fact["high_risk_unsupported"] >= 1
+
+    # No evidence bank (offline/mock) → table rows stay exempt.
+    fact2 = check_draft(draft, {}, use_llm_hint=False)
+    assert not [c for c in fact2["claims"] if "table" in (c.get("kinds") or [])]
+
+
+def test_writer_prompt_forbids_invention_when_no_section_facts():
+    from app.article.service import _section_prompt
+
+    prompt = _section_prompt(
+        {"heading": "Expected Prices", "level": 2},
+        {"topic": "keyboards"},
+        ["Expected Prices"],
+        {},
+        None,
+        {"facts": [], "evidence_exists": True},
+    )
+    assert "NO VERIFIED FACTS" in prompt
+    assert "QUALITATIVELY" in prompt
+
+
 def test_underserved_questions_flags_uncovered_paa():
     from app.outline.service import _underserved_questions
 

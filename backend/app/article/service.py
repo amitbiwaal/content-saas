@@ -438,6 +438,16 @@ def _section_prompt(
             "VERIFIED FACTS for this section — the ONLY figures you may state, "
             "each cited to its source:\n" + lines + "\n"
         )
+    elif extra.get("evidence_exists"):
+        # The run DID build an evidence bank, but nothing in it matches this
+        # heading — the honest move is qualitative coverage, not invention.
+        context += (
+            "NO VERIFIED FACTS exist for this section. Therefore: do NOT name "
+            "specific products, models, prices or figures from memory, and do "
+            "NOT attribute anything to a source. Cover this section "
+            "QUALITATIVELY (criteria, tradeoffs, how-to-judge), or refer only "
+            "to subjects already named in the outline headings.\n"
+        )
     if extra.get("evidence_notes"):
         context += extra["evidence_notes"] + "\n"
     if extra.get("competitor_context"):
@@ -594,6 +604,7 @@ def _section_extras(
 
     extras: list[dict] = []
     opening_marked = False
+    evidence_exists = bool(evidence.get("facts"))
     for i, section in enumerate(parsed):
         heading = section.get("heading", "")
         kind = _section_kind(heading)
@@ -610,6 +621,7 @@ def _section_extras(
             "facts": facts_for_heading(
                 evidence, heading, primary_kw, cap=6 if kind != "body" else 5
             ),
+            "evidence_exists": evidence_exists,
             "evidence_notes": evidence_notes if (is_opening or kind == "verdict") else "",
         }
         if is_body:

@@ -625,6 +625,42 @@ def grade_claim(claim_text: str, research: dict, *, use_llm_hint: bool = True) -
 
 
 # --------------------------------------------------------------------------- #
+# Table-figure verification (evidence-backed runs only)
+# --------------------------------------------------------------------------- #
+_TABLE_FIGURE_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?")
+
+
+def _unverified_table_figures(draft: dict, research: dict | None) -> list[str]:
+    """Markdown table rows whose $-figures are NOT in the evidence bank.
+
+    Table rows are normally exempt from sentence-level claim checks (structured
+    data), which left a blind spot: a model could fabricate a price table and
+    sail through. When the run built an evidence bank, every $-figure in a
+    table must appear in the fetched pages' text — rows that fail become
+    high-risk unsupported claims (and the auto-fix pass rewrites them).
+    """
+    evidence = (research or {}).get("facts") or {}
+    corpus_parts = [str(f.get("text", "")) for f in evidence.get("facts") or [] if isinstance(f, dict)]
+    corpus_parts += [
+        str(p.get("excerpt", ""))
+        for p in (research or {}).get("competitors") or []
+        if isinstance(p, dict)
+    ]
+    corpus = " ".join(corpus_parts).replace(" ", "")
+    if not corpus:
+        return []  # no evidence this run — nothing to verify against
+    out: list[str] = []
+    for line in _draft_text(draft).splitlines():
+        if not _TABLE_ROW_RE.match(line or ""):
+            continue
+        for fig in _TABLE_FIGURE_RE.findall(line):
+            if fig.replace(" ", "") not in corpus:
+                out.append(line.strip()[:240])
+                break
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # Whole-draft check
 # --------------------------------------------------------------------------- #
 def check_draft(draft: dict, research: dict, *, use_llm_hint: bool = True) -> dict:
@@ -647,6 +683,21 @@ def check_draft(draft: dict, research: dict, *, use_llm_hint: bool = True) -> di
         if result["risk"] == "high" and not result["source"]:
             high_risk_unsupported += 1
         graded.append(result)
+
+    # Fabricated-table guard: when this run mined an evidence bank, every table
+    # $-figure must exist in the fetched pages' text.
+    for row in _unverified_table_figures(draft, research):
+        graded.append(
+            {
+                "text": row,
+                "source": None,
+                "confidence": 0.2,
+                "risk": "high",
+                "label": "needs_evidence",
+                "kinds": ["numeric", "table"],
+            }
+        )
+        high_risk_unsupported += 1
 
     return {
         "claims": graded,
