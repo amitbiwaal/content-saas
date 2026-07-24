@@ -296,6 +296,7 @@ def run_project_council(
             "intent": research.intent,
             "keywords": research.keywords or None,
             "competitors": research.competitors or [],
+            "facts": research.facts or None,
         }
         if research
         else {}

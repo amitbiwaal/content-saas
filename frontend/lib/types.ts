@@ -234,6 +234,13 @@ export type SeoMeta = {
   slug: string;
   takeaways: string[];
 };
+// Evidence bank mined from the fetched pages' actual text.
+export type EvidenceFact = { text: string; source: string; kind?: string };
+export type Evidence = {
+  facts: EvidenceFact[];
+  consensus: string[];
+  disagreements: string[];
+};
 export type Research = {
   id?: string;
   serp: SerpItem[];
@@ -245,6 +252,7 @@ export type Research = {
   provider: string;
   keywords?: KeywordSet | null;
   competitors?: CompetitorPage[] | null;
+  facts?: Evidence | null;
 };
 
 export type Integrations = {

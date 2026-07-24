@@ -30,6 +30,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.article.polish import (
+    apply_critique,
+    critique_draft,
     fix_unsupported_claims,
     generate_seo_meta,
     stream_polish,
@@ -135,6 +137,7 @@ def _research_norm(row: Research) -> dict:
         "provider": row.provider,
         "keywords": row.keywords or None,
         "competitors": row.competitors or [],
+        "facts": row.facts or None,
     }
 
 
@@ -276,7 +279,9 @@ def stream_full_pipeline(
         yield _ev("stage", {"stage": "competitors", "status": "start"})
         if keywords is None:
             keywords = research_keywords(brief)
-        research_norm = enrich_with_competitor_pages(gather_research(brief), keywords)
+        research_norm = enrich_with_competitor_pages(
+            gather_research(brief), keywords, brief
+        )
         db.add(
             Research(
                 project_id=project.id,
@@ -289,6 +294,7 @@ def stream_full_pipeline(
                 provider=research_norm.get("provider", "mock"),
                 keywords=research_norm.get("keywords"),
                 competitors=research_norm.get("competitors"),
+                facts=research_norm.get("facts"),
             )
         )
         db.commit()
@@ -302,6 +308,7 @@ def stream_full_pipeline(
                     "intent": research_norm.get("intent"),
                     "serp_results": len(research_norm.get("serp") or []),
                     "pages_analyzed": len(research_norm.get("competitors") or []),
+                    "facts": len((research_norm.get("facts") or {}).get("facts") or []),
                     "paa": len(research_norm.get("paa") or []),
                     "sources": len(research_norm.get("sources") or []),
                 },
@@ -641,6 +648,29 @@ def stream_full_pipeline(
             elif pev["kind"] == "done":
                 polished = pev["draft"]
                 changed = pev["changed"]
+
+        # Cross-model critic: a DIFFERENT model reviews the polished draft and
+        # names up to 2 weakest sections; those get one targeted rewrite. The
+        # blend of author + critic models is the anti-"one detectable voice"
+        # edge no single-model tool has.
+        critic_rewrites = 0
+        critiques = critique_draft(polished, brief, research_norm)
+        if critiques:
+            polished, critic_changed = apply_critique(polished, brief, critiques)
+            critic_rewrites = len(critic_changed)
+            for idx in critic_changed:
+                sec = polished["sections"][idx]
+                yield _ev(
+                    "section_done",
+                    {
+                        "index": idx,
+                        "heading": sec.get("heading", ""),
+                        "level": sec.get("level", 2),
+                        "markdown": sec.get("markdown", ""),
+                    },
+                )
+            if critic_rewrites:
+                changed += critic_rewrites
         seo_meta = generate_seo_meta(polished, brief, research_norm)
         if changed:
             # Persist the polish as a new version so the writer draft stays
@@ -666,6 +696,7 @@ def stream_full_pipeline(
                 "status": "done",
                 "info": {
                     "changed_sections": changed,
+                    "critic_rewrites": critic_rewrites,
                     "title": (seo_meta or {}).get("title", ""),
                     "word_count": draft_payload.get("word_count", 0),
                 },
@@ -788,7 +819,14 @@ def stream_full_pipeline(
     # --- 8. Compliance / house rules (PRD §11) --------------------------- #
     yield _ev("stage", {"stage": "compliance", "status": "start"})
     compliance_rules = (project.council_config or {}).get("compliance_rules")
-    compliance = house_rules_check(draft_payload, compliance_rules)
+    evidence_texts = [
+        str(f.get("text", ""))
+        for f in ((research_norm.get("facts") or {}).get("facts") or [])
+        if isinstance(f, dict)
+    ]
+    compliance = house_rules_check(
+        draft_payload, compliance_rules, evidence_texts=evidence_texts
+    )
     yield _ev(
         "stage",
         {

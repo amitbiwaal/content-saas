@@ -63,6 +63,8 @@ class ResearchOut(BaseModel):
     # and the fetched competitor-page analysis (pipeline stages 1-2).
     keywords: dict | None = Field(default=None)
     competitors: list | None = Field(default=None)
+    # Evidence bank mined from the fetched pages ({facts, consensus, disagreements}).
+    facts: dict | None = Field(default=None)
     created_at: datetime
     updated_at: datetime
 
@@ -113,6 +115,7 @@ def run_research(
         provider=data["provider"],
         keywords=data.get("keywords"),
         competitors=data.get("competitors"),
+        facts=data.get("facts"),
     )
     db.add(research)
 

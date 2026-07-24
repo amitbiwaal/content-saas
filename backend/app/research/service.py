@@ -81,16 +81,21 @@ def gather_research(
     return normalised
 
 
-def enrich_with_competitor_pages(research_norm: dict, keywords: dict | None) -> dict:
+def enrich_with_competitor_pages(
+    research_norm: dict, keywords: dict | None, brief: dict | None = None
+) -> dict:
     """Overlay REAL competitor-page structure + the keyword set onto research.
 
     Downloads the top SERP pages (:mod:`app.research.fetcher`) and replaces the
     templated ``headings`` with what those pages actually cover; attaches the
-    per-page analysis as ``competitors`` and the keyword-research output as
-    ``keywords``. Longtail questions top up a thin ``paa`` list so the FAQ is
-    never built from guesses when real queries exist. Never raises — offline the
-    research passes through unchanged (mock contract).
+    per-page analysis as ``competitors``, mines the pages' prose into the
+    evidence bank (``facts`` — the writer's only allowed source of figures) and
+    carries the keyword-research output as ``keywords``. Longtail questions top
+    up a thin ``paa`` list so the FAQ is never built from guesses when real
+    queries exist. Never raises — offline the research passes through unchanged
+    (mock contract).
     """
+    from app.research.evidence import extract_evidence
     from app.research.fetcher import competitor_headings, fetch_competitor_pages
 
     # Only fetch pages a real provider actually found — the mock SERP fabricates
@@ -106,8 +111,20 @@ def enrich_with_competitor_pages(research_norm: dict, keywords: dict | None) -> 
         real_headings = competitor_headings(pages)
         if real_headings:
             research_norm["headings"] = real_headings
+        evidence_brief = {
+            "topic": (brief or {}).get("topic", ""),
+            "keyword": (brief or {}).get("keyword")
+            or (keywords or {}).get("primary", ""),
+        }
+        try:
+            research_norm["facts"] = extract_evidence(pages, evidence_brief)
+        except Exception:  # noqa: BLE001 - evidence is an enhancement, never fatal
+            research_norm["facts"] = {"facts": [], "consensus": [], "disagreements": []}
     else:
         research_norm.setdefault("competitors", [])
+        research_norm.setdefault(
+            "facts", {"facts": [], "consensus": [], "disagreements": []}
+        )
 
     if keywords:
         research_norm["keywords"] = keywords
@@ -134,4 +151,4 @@ def gather_full_research(brief: dict) -> dict:
     keywords = research_keywords(brief)
     resolved = {**brief, "keyword": (brief.get("keyword") or keywords.get("primary") or "")}
     research_norm = gather_research(resolved)
-    return enrich_with_competitor_pages(research_norm, keywords)
+    return enrich_with_competitor_pages(research_norm, keywords, resolved)

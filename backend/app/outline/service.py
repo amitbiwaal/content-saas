@@ -49,6 +49,31 @@ _OUTLINE_SYSTEM = (
 )
 
 
+def _underserved_questions(research: dict, cap: int = 5) -> list[str]:
+    """Reader questions (PAA) that no fetched competitor heading addresses.
+
+    Token-overlap check against the real competitor headings: a question whose
+    significant tokens barely appear in any heading is a coverage gap — the
+    outline should give at least one of these its own section. Deterministic.
+    """
+    headings = [str(h).lower() for h in research.get("headings") or []]
+    heading_tokens: set[str] = set()
+    for h in headings:
+        heading_tokens.update(t for t in re.findall(r"[a-z0-9]+", h) if len(t) >= 4)
+    out: list[str] = []
+    for q in research.get("paa") or []:
+        q_text = str(q)
+        toks = {t for t in re.findall(r"[a-z0-9]+", q_text.lower()) if len(t) >= 4}
+        if not toks:
+            continue
+        covered = len(toks & heading_tokens) / len(toks)
+        if covered < 0.35:
+            out.append(q_text)
+            if len(out) >= cap:
+                break
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # Directive vs reader-facing heading detection
 # --------------------------------------------------------------------------- #
@@ -200,6 +225,9 @@ def _build_prompt(
         "secondary_keywords": (keywords.get("secondary") or [])[:8],
         "reader_topics_competitors_cover": (research.get("headings") or [])[:30],
         "reader_questions": (research.get("paa") or [])[:20],
+        # Real reader questions NO ranking page answers — cover at least one as
+        # its own section: that's coverage the whole first page is missing.
+        "underserved_questions_no_competitor_answers": _underserved_questions(research),
         "entities": (research.get("entities") or [])[:30],
         "intent": research.get("intent"),
     }

@@ -315,7 +315,7 @@ export default function RunView({
           badge={r ? <span className="tag tag-blue">{r.intent}</span> : undefined}
           summary={
             r
-              ? `${r.serp.length} ${t("sites")}${r.competitors?.length ? ` · ${r.competitors.length} ${t("pages analysed")}` : ""} · ${r.paa.length} ${t("questions")}`
+              ? `${r.serp.length} ${t("sites")}${r.competitors?.length ? ` · ${r.competitors.length} ${t("pages analysed")}` : ""}${r.facts?.facts?.length ? ` · ${r.facts.facts.length} ${t("facts")}` : ""}`
               : undefined
           }
           open={isOpen("research")}
@@ -365,6 +365,27 @@ export default function RunView({
                         </details>
                       ))}
                     </div>
+                  </div>
+                ) : null}
+                {r.facts?.facts?.length ? (
+                  <div className="rblock">
+                    <div className="rsub">
+                      {t("Verified facts collected")} ({r.facts.facts.length})
+                      <span className="deep-badge">{t("evidence")}</span>
+                    </div>
+                    <ul className="rlist ev-list">
+                      {r.facts.facts.slice(0, 6).map((f, i) => (
+                        <li key={i}>
+                          {f.text} <span className="ev-src">— {f.source}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {r.facts.disagreements?.length ? (
+                      <>
+                        <div className="rsub" style={{ marginTop: 8 }}>{t("Where sources disagree")}</div>
+                        <ul className="rlist">{r.facts.disagreements.slice(0, 3).map((d, i) => <li key={i}>{d}</li>)}</ul>
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
                 <div className="rblock">

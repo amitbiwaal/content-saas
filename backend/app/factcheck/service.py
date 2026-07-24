@@ -272,7 +272,10 @@ _SPEC_LINE_RE = re.compile(r"^[A-Za-z][\w /()&'-]{0,30}:\s+\S.{0,45}$")
 _SCOPE_PRICE_RE = re.compile(
     r"\b(?:under|below|over|above|up\s+to|less\s+than|around|about|within|capped\s+at|at)"
     r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
-    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b",
+    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
+    # "...a $400 budget/limit/cap/mark" — the reader's budget from the brief,
+    # not a product-price assertion.
+    r"|\$\s?\d[\d,]*(?:\.\d+)?\s+(?:budget|limit|cap|mark|range|price\s+point|price\s+range)\b",
     re.IGNORECASE,
 )
 
@@ -440,6 +443,23 @@ def _iter_sources(research: dict | None) -> list[dict]:
         if isinstance(value, list):
             for entry in value:
                 _add(entry)
+
+    # Evidence bank: the fetched pages' ACTUAL statements. This is what lets a
+    # numeric claim be verified against real page content (the number itself is
+    # in the fact text) instead of merely word-matching a source title.
+    evidence = research.get("facts")
+    if isinstance(evidence, dict):
+        for fact in evidence.get("facts") or []:
+            if isinstance(fact, dict) and fact.get("text"):
+                out.append(
+                    {"label": str(fact.get("source") or ""), "text": str(fact["text"])}
+                )
+    # The pages' prose excerpts, chunked per page, as citable source material.
+    for page in research.get("competitors") or []:
+        if isinstance(page, dict) and page.get("excerpt"):
+            out.append(
+                {"label": str(page.get("domain") or ""), "text": str(page["excerpt"])[:2400]}
+            )
     return out
 
 

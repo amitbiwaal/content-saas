@@ -44,7 +44,12 @@ _STRIP_BLOCKS = re.compile(
 _TAG = re.compile(r"<[^>]+>")
 _HEADING = re.compile(r"<h([1-3])\b[^>]*>(.*?)</h\1>", re.IGNORECASE | re.DOTALL)
 _TITLE = re.compile(r"<title\b[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_PARAGRAPH = re.compile(r"<(?:p|li)\b[^>]*>(.*?)</(?:p|li)>", re.IGNORECASE | re.DOTALL)
 _FAQ_HINT = re.compile(r"\b(faq|frequently asked|common questions)\b", re.IGNORECASE)
+
+# Per-page excerpt budget: enough prose for real fact extraction without
+# blowing the evidence-extraction prompt (6 pages × ~2.4k chars ≈ 14k chars).
+_EXCERPT_CHARS = 2400
 
 # Domains that block scrapers or are not articles — skip without wasting a slot.
 _SKIP_DOMAINS = (
@@ -71,12 +76,34 @@ def _looks_like_navigation(text: str) -> bool:
     return False
 
 
+def _page_excerpt(body: str) -> str:
+    """Readable prose excerpt from a page body (its <p>/<li> text, cleaned).
+
+    This is the raw material for evidence extraction: real sentences with the
+    page's actual facts/figures, not just its heading skeleton. Short fragments
+    and nav-ish lines are dropped; the result is capped at _EXCERPT_CHARS.
+    """
+    parts: list[str] = []
+    total = 0
+    for inner in _PARAGRAPH.findall(body):
+        text = re.sub(r"\s+", " ", _clean_text(inner))
+        # Real article sentences are longer than chrome ("Read more", "Menu").
+        if len(text) < 60:
+            continue
+        parts.append(text)
+        total += len(text)
+        if total >= _EXCERPT_CHARS:
+            break
+    return " ".join(parts)[:_EXCERPT_CHARS]
+
+
 def analyze_page_html(html: str, *, url: str = "", domain: str = "") -> dict | None:
-    """Extract structure signals from one page's HTML. Pure + deterministic.
+    """Extract structure + content signals from one page's HTML. Pure.
 
     Returns ``{domain, url, title, h1, headings, word_count, has_table,
-    has_faq}`` or ``None`` when the page yields no usable article signal.
-    ``headings`` is the ordered H2/H3 text list (the page's table of contents).
+    has_faq, excerpt}`` or ``None`` when the page yields no usable article
+    signal. ``headings`` is the page's table of contents; ``excerpt`` is its
+    actual prose (feeds the evidence bank).
     """
     if not html:
         return None
@@ -109,6 +136,7 @@ def analyze_page_html(html: str, *, url: str = "", domain: str = "") -> dict | N
         "word_count": words,
         "has_table": "<table" in body.lower(),
         "has_faq": bool(_FAQ_HINT.search(" ".join(headings) or body[:20000])),
+        "excerpt": _page_excerpt(body),
     }
 
 

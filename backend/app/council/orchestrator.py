@@ -182,11 +182,27 @@ def _research_digest(research: dict) -> str:
     paa = [str(q) for q in research.get("paa") or [] if str(q).strip()]
     if paa:
         lines.append("\nREAL READER QUESTIONS: " + " | ".join(paa[:8]))
+
+    evidence = research.get("facts") or {}
+    facts = evidence.get("facts") or []
+    if facts:
+        lines.append("\nVERIFIED FACTS mined from those pages (the article's raw material):")
+        for f in facts[:10]:
+            if isinstance(f, dict):
+                lines.append(f"- {f.get('text', '')} [{f.get('source', '')}]")
+    if evidence.get("consensus"):
+        lines.append("Cross-source CONSENSUS: " + " | ".join(evidence["consensus"][:4]))
+    if evidence.get("disagreements"):
+        lines.append(
+            "Cross-source DISAGREEMENTS (our chance to add original insight): "
+            + " | ".join(evidence["disagreements"][:4])
+        )
+
     sources = research.get("sources") or []
     if sources:
         doms = [s.get("domain") or s.get("title", "") for s in sources if isinstance(s, dict)]
         lines.append("Citable sources: " + ", ".join(d for d in doms if d)[:400])
-    return "\n".join(lines)[:5000]
+    return "\n".join(lines)[:6500]
 
 
 def _brief_text(brief: dict) -> str:

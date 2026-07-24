@@ -228,7 +228,10 @@ _SCOPE_PRICE_RE = re.compile(
     r"\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
     # Price ranges are budget guidance, not a verifiable fact:
     # "between $200 and $500", "$200 to $500", "from $200-$500".
-    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b",
+    r"|\b(?:between|from)?\s*\$\s?\d[\d,]*(?:\.\d+)?\s*(?:-|–|to|and)\s*\$\s?\d[\d,]*(?:\.\d+)?\b"
+    # "...a $400 budget/limit/cap/mark/price point/range" — the reader's budget
+    # (usually straight from the brief), not a product-price assertion.
+    r"|\$\s?\d[\d,]*(?:\.\d+)?\s+(?:budget|limit|cap|mark|range|price\s+point|price\s+range)\b",
     re.IGNORECASE,
 )
 
@@ -270,7 +273,29 @@ def _has_citation(sentence: str) -> bool:
 # --------------------------------------------------------------------------- #
 # Public API
 # --------------------------------------------------------------------------- #
-def check(draft: Any, rules: dict[str, Any] | None = None) -> dict[str, Any]:
+def _figure_in_evidence(sentence: str, evidence_texts: list[str] | None) -> bool:
+    """True when a $-figure/percent in ``sentence`` appears in the evidence bank.
+
+    The fact-checker verifies such claims against the fetched pages' actual
+    text; this keeps the compliance gate consistent with it — a figure the
+    evidence bank contains (with its source) is not "unsourced", even when the
+    sentence lacks an inline attribution.
+    """
+    if not evidence_texts:
+        return False
+    figures = re.findall(r"\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s*%", sentence)
+    if not figures:
+        return False
+    corpus = " ".join(evidence_texts)
+    return all(fig.replace(" ", "") in corpus.replace(" ", "") for fig in figures)
+
+
+def check(
+    draft: Any,
+    rules: dict[str, Any] | None = None,
+    *,
+    evidence_texts: list[str] | None = None,
+) -> dict[str, Any]:
     """Run the house-rules compliance check (PRD §11).
 
     Deterministic and LLM-free: this is the hard pass/fail gate enforced before
@@ -282,6 +307,8 @@ def check(draft: Any, rules: dict[str, Any] | None = None) -> dict[str, Any]:
         draft: The draft payload — a ``{"sections": [...]}`` dict (the
             ``Draft.sections`` shape), a string, or a list of strings.
         rules: Optional per-website overrides for :data:`DEFAULT_RULES`.
+        evidence_texts: Fact-bank texts from the fetched pages; a $-figure/%
+            present there counts as sourced for the unsourced-claim rule.
 
     Returns:
         ``{"passed": bool, "violations": [{"rule", "detail", "locations"}, ...]}``.
@@ -350,6 +377,7 @@ def check(draft: Any, rules: dict[str, Any] | None = None) -> dict[str, Any]:
             for s in sentences
             if s not in headings
             and not _has_citation(s)
+            and not _figure_in_evidence(s, evidence_texts)
             and (
                 _NEGATIVE_RE.search(s)
                 or (_is_statistical(s) and not _is_table_row(s))

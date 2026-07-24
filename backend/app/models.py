@@ -211,6 +211,10 @@ class Research(TimestampMixin, Base):
     # Real competitor-page analysis: one entry per fetched top-ranking page —
     # {"domain", "url", "title", "headings": [..], "word_count", ...}.
     competitors: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Evidence bank extracted from the fetched pages' actual text:
+    # {"facts": [{"text", "source", "kind"}], "consensus": [..],
+    #  "disagreements": [..]} — the writer's only allowed source of figures.
+    facts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     project: Mapped["Project"] = relationship(back_populates="research")
 

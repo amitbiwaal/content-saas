@@ -71,18 +71,17 @@ SYSTEM_PROMPT = (
     "to', 'a wide range of', 'plays a crucial role', 'navigating the', 'in the "
     "realm of', 'delve', 'unlock', 'elevate', 'game-changer', 'moreover', "
     "'furthermore'. Never use em-dashes; use commas or periods.\n"
-    "SOURCING: When 'Research sources you may cite' lists real sources, ATTRIBUTE "
-    "every factual, statistical, numeric or comparative claim inline to a named "
-    "source from that list (e.g. 'according to Wirecutter', 'per Tom's Guide'), and "
-    "VARY which source you cite across the section — never repeat the same source on "
-    "consecutive claims. Use the exact name or domain given; NEVER invent, guess or "
-    "'fix' a URL, domain, vendor-doc page or source name — a source not in the list "
-    "does not exist for you. Copy every source name/domain CHARACTER FOR "
-    "CHARACTER from the list (no respellings). When the list says NONE were "
-    "supplied, write QUALITATIVELY from general knowledge: do not state specific "
-    "figures, percentages, prices or 'studies show' numbers you cannot attribute, "
-    "and avoid unsupported superlatives — describe ranges and tradeoffs in words "
-    "instead. Never invent statistics.\n"
+    "SOURCING — the iron rule: every figure (statistic, price, spec, capacity, "
+    "percentage) MUST come from the 'VERIFIED FACTS' list when one is provided "
+    "for this section, cited to the source given there. A number that is not in "
+    "the facts list DOES NOT EXIST for you — from memory you may write only "
+    "qualitative statements (ranges and tradeoffs in words). Attribute inline "
+    "('according to Wirecutter', 'per Tom's Guide') and VARY which source you "
+    "cite — never the same source on consecutive claims. Copy every source "
+    "name/domain CHARACTER FOR CHARACTER (no respellings); a source not listed "
+    "does not exist. When neither facts nor sources are supplied, write "
+    "QUALITATIVELY: no figures, no 'studies show', no unsupported superlatives. "
+    "Never invent statistics.\n"
     "SEO: weave the assigned keyword for this section in ONCE, naturally (never "
     "force or repeat it); mention listed entities only where they genuinely fit.\n"
     "Return ONLY the body for this section (no heading line). If you reply as JSON, "
@@ -431,6 +430,16 @@ def _section_prompt(
     )
     if extra.get("keyword"):
         context += f"Assigned keyword for this section (weave in once): {extra['keyword']}\n"
+    if extra.get("facts"):
+        lines = "\n".join(
+            f"- {f['text']} [source: {f['source']}]" for f in extra["facts"]
+        )
+        context += (
+            "VERIFIED FACTS for this section — the ONLY figures you may state, "
+            "each cited to its source:\n" + lines + "\n"
+        )
+    if extra.get("evidence_notes"):
+        context += extra["evidence_notes"] + "\n"
     if extra.get("competitor_context"):
         context += (
             "What ranking pages cover under similar headings: "
@@ -552,10 +561,27 @@ def _strip_code_fence(text: str) -> str:
 def _section_extras(
     parsed: list[dict], outline: dict, research: dict, brief: dict | None = None
 ) -> list[dict]:
-    """Precompute each section's context pack: assigned keyword, outline element
-    placements, competitor coverage to beat, opening flag and word budget."""
+    """Precompute each section's context pack: assigned keyword, verified facts,
+    outline element placements, competitor coverage, opening flag, word budget."""
+    from app.research.evidence import facts_for_heading
+
     keywords = _keyword_assignments(parsed, research)
     notes = _element_notes(outline if isinstance(outline, dict) else {})
+    evidence = (research or {}).get("facts") or {}
+    primary_kw = ((research or {}).get("keywords") or {}).get("primary") or ""
+    # Consensus/disagreement synthesis: original editorial insight no single
+    # competitor page has — offered to the opening + comparison-ish sections.
+    synth_lines: list[str] = []
+    for point in (evidence.get("consensus") or [])[:3]:
+        synth_lines.append(f"- Reviewers agree: {point}")
+    for point in (evidence.get("disagreements") or [])[:3]:
+        synth_lines.append(f"- Sources disagree: {point}")
+    evidence_notes = (
+        "Cross-source synthesis you may draw on (name the sources as given):\n"
+        + "\n".join(synth_lines)
+        if synth_lines
+        else ""
+    )
 
     # Per-section word budget: without it, a many-section outline overshoots the
     # target 2-3x (an LLM never does the division itself). Verdict/FAQ have
@@ -570,13 +596,21 @@ def _section_extras(
     opening_marked = False
     for i, section in enumerate(parsed):
         heading = section.get("heading", "")
-        is_body = _section_kind(heading) == "body"
+        kind = _section_kind(heading)
+        is_body = kind == "body"
+        is_opening = is_body and not opening_marked
         extra = {
             "keyword": keywords[i],
             "elements": notes.get(heading.strip().lower()) or [],
             "competitor_context": _competitor_context(heading, research),
-            "is_opening": is_body and not opening_marked,
+            "is_opening": is_opening,
             "word_budget": budget if is_body else None,
+            # Verified facts matched to this heading (verdict/FAQ get a wider
+            # pull so their answers are grounded too).
+            "facts": facts_for_heading(
+                evidence, heading, primary_kw, cap=6 if kind != "body" else 5
+            ),
+            "evidence_notes": evidence_notes if (is_opening or kind == "verdict") else "",
         }
         if is_body:
             opening_marked = True

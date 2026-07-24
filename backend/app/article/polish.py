@@ -134,20 +134,32 @@ def _polish_prompt(
     if keyword:
         parts.append(f"Assigned keyword for this section: {keyword}")
 
+    if extra.get("critique"):
+        cr = extra["critique"]
+        parts.append(
+            "A reviewer from a DIFFERENT model flagged this section as one of "
+            f"the article's weakest.\nProblem: {cr.get('problem', '')}\n"
+            f"Fix instruction (apply it precisely): {cr.get('fix', '')}\n"
+            "Keep every fact and citation intact unless the fix says otherwise."
+        )
     if extra.get("fix_claims"):
         srcs = ", ".join(extra.get("sources") or []) or "(none listed)"
         joined = "\n".join(f"- {c}" for c in extra["fix_claims"][:6])
+        fact_lines = "\n".join(
+            f"- {f['text']} [source: {f['source']}]"
+            for f in (extra.get("facts") or [])[:6]
+        )
         parts.append(
             "FIX UNSUPPORTED CLAIMS — the ONLY job of this rewrite. These "
             "sentences state figures or negatives with no supporting source:\n"
             f"{joined}\n"
             f"Research sources you may attribute to: {srcs}.\n"
-            "For each flagged sentence do exactly one of: (a) attribute it "
-            "inline to one of those sources ONLY if that source genuinely "
-            "supports it, (b) rewrite it qualitatively with no bare figures, or "
-            "(c) delete it. Attribute in PLAIN PROSE ('per Good Housekeeping') "
-            "— never as a markdown link and never with a '(source)' "
-            "placeholder. Leave every other sentence untouched."
+            + (f"Verified facts you may substitute in (with their source):\n{fact_lines}\n" if fact_lines else "")
+            + "For each flagged sentence do exactly one of: (a) replace/attribute "
+            "it using a verified fact above, (b) rewrite it qualitatively with "
+            "no bare figures, or (c) delete it. Attribute in PLAIN PROSE ('per "
+            "Good Housekeeping') — never as a markdown link and never with a "
+            "'(source)' placeholder. Leave every other sentence untouched."
         )
 
     kind = _section_kind(section.get("heading", ""))
@@ -339,6 +351,124 @@ def stream_polish(
 
 
 # --------------------------------------------------------------------------- #
+# Cross-model critic — a DIFFERENT model reviews the polished draft
+# --------------------------------------------------------------------------- #
+_CRITIC_SYSTEM = (
+    "You are a ruthless external reviewer from a rival publication, judging "
+    "whether this article beats the pages already ranking. Score every section "
+    "against: (1) does the first sentence directly answer its heading, (2) is "
+    "it concrete and evidence-grounded or hand-wavy, (3) does it add anything "
+    "the competitor coverage lacks, (4) does it read like a human specialist. "
+    "Name AT MOST the 2 weakest sections — the ones a reader would skip — and "
+    "for each give ONE concrete, actionable fix (what to cut, sharpen, ground "
+    "or restructure). If every section genuinely holds up, return an empty "
+    "list. Output STRICT JSON: {\"weak\": [{\"index\": int, \"problem\": str, "
+    "\"fix\": str}]}."
+)
+
+# The critic deliberately runs on a DIFFERENT provider seat than the writer —
+# a second model catches patterns the author model is blind to (and the blend
+# of voices is the product's whole thesis). Falls back via get_adapter.
+CRITIC_PROVIDER = "xai"
+
+
+def critique_draft(
+    draft: dict,
+    brief: dict,
+    research: dict | None = None,
+    *,
+    provider: str = CRITIC_PROVIDER,
+) -> list[dict]:
+    """Cross-model review: up to 2 weakest sections with a concrete fix each.
+
+    Returns ``[{index, problem, fix}]`` (possibly empty). Never raises; an
+    unusable reply (e.g. the mock adapter) yields ``[]`` so offline runs skip
+    the rewrite quietly.
+    """
+    sections = (draft or {}).get("sections") or []
+    if len(sections) < 3:
+        return []
+    numbered = []
+    for i, s in enumerate(sections):
+        if not isinstance(s, dict):
+            continue
+        body = re.sub(r"\s+", " ", s.get("markdown") or "")[:600]
+        numbered.append(f"[{i}] {s.get('heading', '')}\n{body}")
+    competitor_bar = "; ".join(
+        str(h) for h in ((research or {}).get("headings") or [])[:12]
+    )
+    prompt = (
+        f"Topic: {brief.get('topic', '')}\n"
+        f"What the ranking pages cover: {competitor_bar}\n\n"
+        f"The article, section by section:\n\n" + "\n\n".join(numbered)[:12000]
+    )
+    try:
+        resp = get_adapter(provider).complete(
+            system=_CRITIC_SYSTEM, prompt=prompt, json_mode=True
+        )
+        data = json.loads(resp.text) if resp.text else None
+    except (ProviderRefusal, ProviderError, json.JSONDecodeError, TypeError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    out: list[dict] = []
+    for item in data.get("weak") or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            idx = int(item.get("index"))
+        except (TypeError, ValueError):
+            continue
+        fix = re.sub(r"\s+", " ", str(item.get("fix") or "")).strip()
+        if 0 <= idx < len(sections) and fix:
+            out.append(
+                {
+                    "index": idx,
+                    "problem": re.sub(r"\s+", " ", str(item.get("problem") or "")).strip()[:300],
+                    "fix": fix[:500],
+                }
+            )
+        if len(out) >= 2:
+            break
+    return out
+
+
+def apply_critique(
+    draft: dict,
+    brief: dict,
+    critiques: list[dict],
+    *,
+    provider: str = "anthropic",
+) -> tuple[dict, list[int]]:
+    """Rewrite the critic's flagged sections. Returns (draft, changed_indexes)."""
+    sections = [dict(s) for s in (draft or {}).get("sections") or [] if isinstance(s, dict)]
+    if not sections or not critiques:
+        return draft, []
+    changed: list[int] = []
+    for item in critiques:
+        idx = item.get("index")
+        if not isinstance(idx, int) or not (0 <= idx < len(sections)):
+            continue
+        out = polish_section(
+            sections[idx],
+            brief,
+            provider=provider,
+            extra={"critique": item},
+        )
+        if out.get("changed"):
+            sections[idx] = {
+                "heading": out["heading"],
+                "level": out["level"],
+                "markdown": out["markdown"],
+            }
+            changed.append(idx)
+    if not changed:
+        return draft, []
+    word_count = sum(_count_words(s.get("markdown", "")) for s in sections)
+    return {"sections": sections, "word_count": word_count}, changed
+
+
+# --------------------------------------------------------------------------- #
 # Targeted claim remediation (feeds the fact-check → publish-gate loop)
 # --------------------------------------------------------------------------- #
 def _norm_probe(text: str) -> str:
@@ -383,13 +513,22 @@ def fix_unsupported_claims(
                 targets.setdefault(i, []).append(claim)
                 break
 
+    from app.research.evidence import facts_for_heading
+
+    evidence = (research or {}).get("facts")
     changed: list[int] = []
     for i, claims in targets.items():
         out = polish_section(
             sections[i],
             brief,
             provider=provider,
-            extra={"fix_claims": claims, "sources": source_names},
+            extra={
+                "fix_claims": claims,
+                "sources": source_names,
+                "facts": facts_for_heading(
+                    evidence, sections[i].get("heading", ""), cap=6
+                ),
+            },
         )
         if out.get("changed"):
             sections[i] = {
