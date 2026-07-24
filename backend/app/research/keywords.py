@@ -58,15 +58,37 @@ _SYSTEM = (
 )
 
 
+_YEAR_IN_KW_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _refresh_stale_years(phrase: str) -> str:
+    """Bump any past calendar year in a keyword to the current one.
+
+    The LLM's training data leaks stale years ("best home espresso machine
+    2023" in a 2026 article) — a dated keyword woven into the draft instantly
+    reads as old content. Future years are left alone (searchers do query
+    next-year terms late in a year).
+    """
+    from datetime import date
+
+    current = date.today().year
+
+    def _repl(match: re.Match[str]) -> str:
+        year = int(match.group(0))
+        return str(current) if year < current else match.group(0)
+
+    return _YEAR_IN_KW_RE.sub(_repl, phrase)
+
+
 def _clean_phrase(value: object, max_words: int = 10) -> str:
-    """Normalise one keyword phrase: collapse whitespace, cap length."""
+    """Normalise one keyword phrase: collapse whitespace, cap length, fresh years."""
     text = re.sub(r"\s+", " ", str(value or "")).strip().strip('"').strip()
     if not text:
         return ""
     words = text.split()
     if len(words) > max_words:
         text = " ".join(words[:max_words])
-    return text[:120]
+    return _refresh_stale_years(text[:120])
 
 
 def _clean_list(raw: object, *, cap: int, drop: set[str]) -> list[str]:

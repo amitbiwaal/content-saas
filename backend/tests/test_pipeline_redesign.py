@@ -78,6 +78,19 @@ def test_research_keywords_honors_user_keyword():
     assert kw["primary"] == "ergonomic chair"
 
 
+def test_stale_years_in_keywords_are_refreshed():
+    from datetime import date
+
+    from app.research.keywords import _clean_phrase
+
+    current = date.today().year
+    assert _clean_phrase("best home espresso machine 2023") == (
+        f"best home espresso machine {current}"
+    )
+    # Current and future years pass through untouched.
+    assert _clean_phrase(f"top picks {current + 1}") == f"top picks {current + 1}"
+
+
 def test_keyword_variants_and_volume_selection():
     from app.research.keywords import _keyword_variants, _select_primary, enrich_with_ahrefs
 
