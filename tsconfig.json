@@ -6,6 +6,7 @@
     { "path": "./packages/observability" },
     { "path": "./packages/database" },
     { "path": "./packages/security" },
-    { "path": "./services/api" }
+    { "path": "./services/api" },
+    { "path": "./packages/events" }
   ]
 }

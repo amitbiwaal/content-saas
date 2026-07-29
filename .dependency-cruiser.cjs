@@ -68,13 +68,14 @@ module.exports = {
       comment:
         'Feature packages do not import each other internals — the code expression of "no ' +
         'engine may call another engine database" (rule 4).',
+      // The capture group is what makes this correct: `$1` in `pathNot` binds to
+      // the SAME package matched in `from`, so a module importing a sibling
+      // inside its own package is allowed while a cross-feature import is not.
+      // Without it the rule forbade every intra-package import.
       from: { path: `^${FEATURE}/` },
       to: {
         path: `^${FEATURE}/`,
-        pathNot: [
-          '^packages/(content|knowledge|ai|platform|storage|events)/src/index\\.ts$',
-          // same-package imports are fine; handled by the more specific rules above
-        ],
+        pathNot: '^packages/$1/',
       },
     },
     {

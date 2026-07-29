@@ -62,6 +62,12 @@ importers:
 
   packages/database: {}
 
+  packages/events:
+    dependencies:
+      '@contentos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+
   packages/observability: {}
 
   packages/security: {}
