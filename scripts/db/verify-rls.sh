@@ -87,9 +87,13 @@ else
     fi
 
     # G · with tenant A's context, tenant B's rows are invisible.
+    # `psql -c` with a multi-statement string prints a command tag per
+    # statement (BEGIN, SET, COMMIT) alongside the result, each on its own
+    # line. Select the line that is purely digits rather than stripping
+    # whitespace, which would glue the tags to the count.
     visible="$(app_sql "BEGIN; SET LOCAL app.tenant_id='${TENANT_B}';
       SELECT count(*) FROM workspace_memberships WHERE tenant_id='${TENANT_A}'; COMMIT;" \
-      | tr -d '[:space:]')"
+      | grep -E '^[0-9]+$' | head -1)"
     if [ "${visible}" = "0" ]; then
       note "cross-tenant read blocked" "0 rows"
     else
@@ -100,7 +104,7 @@ else
     # the role simply could not read ANYTHING — proving nothing about isolation.
     own="$(app_sql "BEGIN; SET LOCAL app.tenant_id='${TENANT_A}';
       SELECT count(*) FROM workspace_memberships WHERE tenant_id='${TENANT_A}'; COMMIT;" \
-      | tr -d '[:space:]')"
+      | grep -E '^[0-9]+$' | head -1)"
     if [ "${own}" -ge 1 ] 2>/dev/null; then
       note "own-tenant read permitted (positive control)" "${own} row(s)"
     else
