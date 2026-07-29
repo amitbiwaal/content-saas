@@ -216,16 +216,14 @@ jobs:
         run: |
           mkdir -p ci-logs
           if ! bash scripts/db/migrate.sh 2>&1 | tee ci-logs/migrations.log; then
-            echo "::error title=Migration failed::$(tail -30 ci-logs/migrations.log | tr '
-' '~')"
+            echo "::error title=Migration failed::$(tail -30 ci-logs/migrations.log | paste -sd'~' -)"
             exit 1
           fi
 
       - name: 4c · verify no migration drift (idempotent re-run)
         run: |
           if ! bash scripts/db/migrate.sh 2>&1 | tee ci-logs/migrations-rerun.log; then
-            echo "::error title=Migration re-run failed::$(tail -30 ci-logs/migrations-rerun.log | tr '
-' '~')"
+            echo "::error title=Migration re-run failed::$(tail -30 ci-logs/migrations-rerun.log | paste -sd'~' -)"
             exit 1
           fi
           cat ci-logs/migrations-rerun.log >> ci-logs/migrations.log
@@ -233,16 +231,14 @@ jobs:
           # output, not the appended file — the first run's summary also
           # contains the digit 0 and would mask a real drift.
           if ! grep -q "(0 applied" ci-logs/migrations-rerun.log; then
-            echo "::error title=Migration drift::$(tail -10 ci-logs/migrations-rerun.log | tr '
-' '~')"
+            echo "::error title=Migration drift::$(tail -10 ci-logs/migrations-rerun.log | paste -sd'~' -)"
             exit 1
           fi
 
       - name: 4d · seed development data
         run: |
           if ! bash scripts/db/seed.sh 2>&1 | tee ci-logs/seed.log; then
-            echo "::error title=Seed failed::$(tail -30 ci-logs/seed.log | tr '
-' '~')"
+            echo "::error title=Seed failed::$(tail -30 ci-logs/seed.log | paste -sd'~' -)"
             exit 1
           fi
           cat ci-logs/seed.log >> ci-logs/migrations.log
@@ -252,8 +248,7 @@ jobs:
         run: |
           mkdir -p ci-logs
           if ! bash scripts/db/verify-rls.sh 2>&1 | tee ci-logs/rls-verification.log; then
-            echo "::error title=RLS verification failed::$(tail -30 ci-logs/rls-verification.log | tr '
-' '~')"
+            echo "::error title=RLS verification failed::$(tail -30 ci-logs/rls-verification.log | paste -sd'~' -)"
             exit 1
           fi
 
