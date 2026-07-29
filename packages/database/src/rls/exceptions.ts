@@ -69,6 +69,10 @@ export const ALL_EXCEPTION_TABLES: readonly string[] = [
 export const APPROVED_POLICY_VARIANTS: Readonly<Record<string, string>> = {
   workspaces:
     'Keys on `id` rather than `tenant_id` because workspaces.id IS the tenant (ADR-017), plus a read-only org-scoped listing policy so an org admin can list workspaces without entering them (03-database/tables.md §2).',
+  audit_log:
+    'WITH CHECK admits a NULL tenant_id because pre-tenant actions — authentication, membership resolution — must be audited before a tenant is known (16-security/audit.md). USING does not, so such a record is writable but never visible to a tenant-scoped read; it is read through the operator path.',
+  outbox_events:
+    'Carries an additional read-only cross-tenant policy for contentos_relay, which drains one queue for the whole platform. Documented and audited (03-database/tables.md §8, 16-security/rbac.md); the contentos_app policy itself is canonical and unchanged.',
 };
 
 /**
