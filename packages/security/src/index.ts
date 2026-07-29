@@ -134,6 +134,8 @@ export type {
   QueueingAuditWriterHandle,
   Transaction,
 } from './audit/writer.js';
+export type { AuditExecutor, PersistentAuditWriterOptions } from './audit/persistent-writer.js';
+export { createPersistentAuditWriter } from './audit/persistent-writer.js';
 export {
   createAuditWriter,
   DEFAULT_MAX_BUFFERED,
