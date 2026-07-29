@@ -8,6 +8,7 @@
     { "path": "./packages/security" },
     { "path": "./services/api" },
     { "path": "./packages/events" },
+    { "path": "./packages/platform" },
     { "path": "./workers/host" }
   ]
 }

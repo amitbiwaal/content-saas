@@ -76,6 +76,15 @@ importers:
 
   packages/observability: {}
 
+  packages/platform:
+    dependencies:
+      '@contentos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@contentos/security':
+        specifier: workspace:*
+        version: link:../security
+
   packages/security: {}
 
   services/api:

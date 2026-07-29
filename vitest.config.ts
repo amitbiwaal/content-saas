@@ -31,6 +31,7 @@ export default defineConfig({
       '@contentos/observability': pkg('observability'),
       '@contentos/database': pkg('database'),
       '@contentos/events': pkg('events'),
+      '@contentos/platform': pkg('platform'),
       '@contentos/security': pkg('security'),
     },
   },

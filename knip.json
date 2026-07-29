@@ -20,5 +20,12 @@
   },
   "ignore": ["backend/**", "frontend/**", "archive/**", "contentos-docs/**"],
   "ignoreFiles": [".dependency-cruiser.cjs", "packages/*/drizzle.config.ts"],
-  "ignoreDependencies": ["@contentos/database"]
+  "//": "`tests/` is a conformance suite, not a workspace package, so it declares no dependencies of its own; the packages it wires together are listed here.",
+  "ignoreDependencies": [
+    "@contentos/contracts",
+    "@contentos/database",
+    "@contentos/events",
+    "@contentos/platform",
+    "@contentos/security"
+  ]
 }

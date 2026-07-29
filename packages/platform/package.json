@@ -1,0 +1,27 @@
+{
+  "name": "@contentos/platform",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Platform Layer: organizations, workspaces, users, money, notifications (04-platform/).",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentos/contracts": "workspace:*",
+    "@contentos/security": "workspace:*"
+  },
+  "devDependencies": {}
+}
