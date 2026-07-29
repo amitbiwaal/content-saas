@@ -136,3 +136,58 @@ export {
   DEFAULT_READY_TIMEOUT_MS,
   REDIS_CLIENT_DEFAULTS,
 } from './bus/ioredis-client.js';
+
+// Replay coordination — ADR-028. Re-delivers events; never re-executes effects.
+export type {
+  NonEmpty,
+  ReplayAuditEntry,
+  ReplayContext,
+  ReplayCoordinator,
+  ReplayDeliveryOutcome,
+  ReplayDeps,
+  ReplayEstimate,
+  ReplayMode,
+  ReplayProgress,
+  ReplayRequest,
+  ReplayRun,
+  ReplayStatus,
+} from './replay/replay-coordinator.js';
+export {
+  createReplayCoordinator,
+  DEFAULT_BATCH_SIZE as DEFAULT_REPLAY_BATCH_SIZE,
+  DEFAULT_CHECKPOINT_INTERVAL,
+  DEFAULT_LAG_THRESHOLD_SECONDS,
+  DEFAULT_MAX_EVENTS,
+  DEFAULT_RATE_LIMIT_PER_SECOND,
+  MAX_CONCURRENT_RUNS,
+  OUTBOX_RETENTION_DAYS,
+  ReplayRejectedError,
+  SKIP_REASONS,
+} from './replay/replay-coordinator.js';
+
+// Observability — the FROZEN metric catalogue, log schema and trace model.
+export type {
+  DeliveryOutcome as MetricDeliveryOutcome,
+  EventMetricsOptions,
+  EventPlatformMetrics,
+  InvariantBreach,
+  InvariantKind,
+} from './observability/event-metrics.js';
+export { createEventPlatformMetrics } from './observability/event-metrics.js';
+export type {
+  EventLogAction,
+  EventLogComponent,
+  EventLogContext,
+  EventLogger,
+  EventLoggerOptions,
+  EventLogSink,
+  EventPlatformLogRecord,
+} from './observability/event-log.js';
+export { createEventLogger, jsonLineSink } from './observability/event-log.js';
+export type { EventTracer, SpanOutcome } from './observability/event-tracing.js';
+export {
+  createEventTracer,
+  samplerAlwaysSamplingBreaches,
+  SPAN_ATTRIBUTES,
+  TRACEPARENT_HEADER,
+} from './observability/event-tracing.js';

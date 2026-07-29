@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@contentos/contracts": "workspace:*",
+    "@contentos/observability": "workspace:*",
     "ioredis": "5.4.2"
   },
   "devDependencies": {}

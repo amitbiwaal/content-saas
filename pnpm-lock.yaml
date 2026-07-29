@@ -67,6 +67,9 @@ importers:
       '@contentos/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@contentos/observability':
+        specifier: workspace:*
+        version: link:../observability
       ioredis:
         specifier: 5.4.2
         version: 5.4.2
