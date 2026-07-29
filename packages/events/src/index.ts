@@ -102,3 +102,7 @@ export {
   DEFAULT_MAX_PUBLISH_ATTEMPTS,
   toEvent,
 } from './relay/relay.js';
+
+// Serializer — the wire format
+export type { EventSerializer } from './serializer/serializer.js';
+export { createEventSerializer, DeserializationError } from './serializer/serializer.js';
