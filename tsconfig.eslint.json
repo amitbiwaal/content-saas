@@ -1,0 +1,26 @@
+{
+  "//": "Type-aware linting needs a project that covers EVERY linted file. The per-package tsconfigs deliberately exclude `*.test.ts` (tests are not shipped in `dist`), and root config files belong to no package at all — so without this, typed rules fail to parse them and the lint gate errors on files it should be checking.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "incremental": false,
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      "@contentos/contracts": ["./packages/contracts/src/index.ts"],
+      "@contentos/observability": ["./packages/observability/src/index.ts"],
+      "@contentos/database": ["./packages/database/src/index.ts"],
+      "@contentos/security": ["./packages/security/src/index.ts"]
+    }
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/*.config.ts",
+    "services/*/src/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

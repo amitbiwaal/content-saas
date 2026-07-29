@@ -1,0 +1,11 @@
+{
+  "//": "Solution file. TypeScript project references are boundary mechanism #1 — an unresolvable cross-package import fails here before any lint runs.",
+  "files": [],
+  "references": [
+    { "path": "./packages/contracts" },
+    { "path": "./packages/observability" },
+    { "path": "./packages/database" },
+    { "path": "./packages/security" },
+    { "path": "./services/api" }
+  ]
+}

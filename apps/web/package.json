@@ -1,0 +1,21 @@
+{
+  "name": "@contentos/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Customer application shell. Scaffolded in Sprint 0 against frozen API contracts.",
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "build": "next build",
+    "start": "next start --port 3000",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "15.1.6",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.7",
+    "@types/react-dom": "19.0.3"
+  }
+}

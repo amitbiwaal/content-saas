@@ -1,0 +1,24 @@
+{
+  "name": "@contentos/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Event envelope, Unified Scoring Contract, shared types. ZERO dependencies.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

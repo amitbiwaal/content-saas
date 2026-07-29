@@ -1,0 +1,160 @@
+# ContentOS v2 — local development stack.
+#
+# Spec: `17-implementation/implementation-order.md` Sprint 0 → Containers:
+#   "PostgreSQL 17 + pgvector, Redis 7, MinIO, Mailpit, ClamAV".
+#
+# Local development only. No secrets live here: every value is a development
+# default, and production configuration comes from the secret store at runtime
+# (`07-development-guide/configuration.md`).
+#
+# Started by `pnpm dev:up`; see scripts/dev/start.*.
+
+name: contentos
+
+services:
+  # ── PostgreSQL 17 + pgvector ───────────────────────────────────────────────
+  # pgvector first, Qdrant at scale (ADR-006). The image ships the extension so
+  # migration 0019 can create it without a build step.
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: contentos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: contentos
+      POSTGRES_PASSWORD: contentos_dev
+      POSTGRES_DB: contentos
+      # Deterministic collation so index ordering matches CI and production.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C'
+    command:
+      - postgres
+      # Transaction pooling is the required mode; statement pooling is
+      # prohibited (16-security/row-level-security.md). A pooler is added in
+      # Sprint 1 — the server itself must not be configured to defeat it.
+      - -c
+      - max_connections=200
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U contentos -d contentos']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # ── Redis 7 ────────────────────────────────────────────────────────────────
+  # Transport for the event bus and the tenant-scoped cache.
+  # "Redis is transport; PostgreSQL is truth" (ADR-020).
+  redis:
+    image: redis:7-alpine
+    container_name: contentos-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      # Bounded memory so a runaway local job cannot exhaust the host.
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # ── MinIO — S3-compatible object storage ───────────────────────────────────
+  # Stands in for Cloudflare R2 locally. Applications never touch this directly:
+  # the SDK is confined to packages/storage/src/drivers/**.
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: contentos-minio
+    restart: unless-stopped
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: contentos
+      MINIO_ROOT_PASSWORD: contentos_dev_minio
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Creates the buckets once MinIO is healthy, then exits.
+  minio-init:
+    image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+    container_name: contentos-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 contentos contentos_dev_minio &&
+      mc mb --ignore-existing local/contentos-media &&
+      mc mb --ignore-existing local/contentos-exports &&
+      mc mb --ignore-existing local/contentos-backups &&
+      echo 'buckets ready'
+      "
+    restart: 'no'
+
+  # ── Mailpit — local SMTP capture ───────────────────────────────────────────
+  # Development mail goes here and nowhere else, so a seeded address can never
+  # reach a real inbox.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    container_name: contentos-mailpit
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - '1025:1025' # SMTP
+      - '8025:8025' # web UI
+    healthcheck:
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:8025/readyz']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ── ClamAV — upload scanning ───────────────────────────────────────────────
+  # Every upload is scanned before it becomes reachable; a quarantined object is
+  # never served (`12-storage-platform/`). Slow to start because it loads its
+  # signature database, hence the long start_period.
+  clamav:
+    image: clamav/clamav:1.4
+    container_name: contentos-clamav
+    restart: unless-stopped
+    environment:
+      CLAMAV_NO_MILTERD: 'true'
+      FRESHCLAM_CHECKS: 1
+    ports:
+      - '3310:3310'
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ['CMD-SHELL', 'clamdcheck.sh || exit 1']
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 180s
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  clamav-data:
