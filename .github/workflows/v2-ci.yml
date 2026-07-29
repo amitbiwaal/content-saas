@@ -114,6 +114,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # GitHub's default `run` shell on Linux is `bash -e` WITHOUT pipefail, so
+    # `script 2>&1 | tee log` returns tee's exit code and a failing migration
+    # reports success. `shell: bash` is `bash --noprofile --norc -eo pipefail`,
+    # which makes the failure propagate. Step 4b passed on run 30463671176 while
+    # migration 0005 was actually failing underneath it.
+    defaults:
+      run:
+        shell: bash
+
     services:
       postgres:
         image: pgvector/pgvector:pg17

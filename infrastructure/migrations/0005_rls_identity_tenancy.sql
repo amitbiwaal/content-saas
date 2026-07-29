@@ -144,7 +144,13 @@ BEGIN
     JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'public'
      AND c.relkind = 'r'
-     AND NOT c.relrowsecurity;
+     AND NOT c.relrowsecurity
+     -- `schema_migrations` is the migration runner's own bookkeeping table. It
+     -- is created BEFORE any migration runs and holds no tenant data, so it is
+     -- not an RLS exception and must not be counted as one. Both
+     -- `scripts/db/verify-rls.sh` and `packages/database/src/rls/conformance.ts`
+     -- already exclude it; this assertion did not, and counted 6 instead of 5.
+     AND c.relname <> 'schema_migrations';
 
   IF exception_count <> 5 THEN
     RAISE EXCEPTION
