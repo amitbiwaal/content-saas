@@ -63,6 +63,14 @@ $$;
 -- Schema usage. Tables are owned by the migrator; the app never owns anything.
 GRANT USAGE ON SCHEMA public TO contentos_app, contentos_relay, contentos_analytics;
 
+-- The migrator owns every table, so it must be able to create them.
+--
+-- PostgreSQL 15 removed the implicit `CREATE` grant on schema `public` that
+-- earlier versions gave to `PUBLIC`; only the database owner retains it. Without
+-- this, `SET LOCAL ROLE contentos_migrator` in 0003 fails with
+-- "permission denied for schema public" on the first CREATE TABLE.
+GRANT CREATE, USAGE ON SCHEMA public TO contentos_migrator;
+
 -- Default privileges for objects the migrator creates from here on.
 ALTER DEFAULT PRIVILEGES FOR ROLE contentos_migrator IN SCHEMA public
   GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO contentos_app;
