@@ -106,3 +106,23 @@ export {
 // Serializer — the wire format
 export type { EventSerializer } from './serializer/serializer.js';
 export { createEventSerializer, DeserializationError } from './serializer/serializer.js';
+
+// Redis Streams event bus — ADR-020. `EventBus` is the swap point.
+export type {
+  BusEntryId,
+  ClaimOptions,
+  ClaimResult,
+  DeliveredEvent,
+  EventBus,
+  ReadGroupOptions,
+  RedisStreamsBusOptions,
+  RedisStreamsClient,
+} from './bus/redis-streams.js';
+export {
+  BackPressureError,
+  BusShutdownError,
+  createRedisStreamsBus,
+  DEFAULT_BASE_DELAY_MS,
+  DEFAULT_MAX_ATTEMPTS,
+  isTransientRedisError,
+} from './bus/redis-streams.js';
