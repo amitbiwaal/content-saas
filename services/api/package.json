@@ -1,0 +1,26 @@
+{
+  "name": "@contentos/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The only inbound network surface. Platform middleware and health probes only.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@contentos/observability": "workspace:*"
+  },
+  "devDependencies": {}
+}

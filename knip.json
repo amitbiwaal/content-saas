@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["tests/**/*.test.ts"],
+      "project": ["tests/**/*.ts"]
+    },
+    "packages/*": {
+      "entry": ["src/index.ts", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "services/*": {
+      "entry": ["src/index.ts", "src/**/*.test.ts"],
+      "project": ["src/**/*.ts"]
+    },
+    "apps/web": {
+      "entry": ["app/**/*.tsx", "next.config.mjs"],
+      "project": ["**/*.{ts,tsx}"]
+    }
+  },
+  "ignore": ["backend/**", "frontend/**", "archive/**", "contentos-docs/**"],
+  "ignoreFiles": [".dependency-cruiser.cjs", "packages/*/drizzle.config.ts"],
+  "ignoreDependencies": ["@contentos/database"]
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@contentos/security",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tenant context, authentication, MFA, authorization, audit writer, crypto. Reusable primitives only.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

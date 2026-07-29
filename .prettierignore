@@ -1,0 +1,21 @@
+# Build output and dependencies
+dist
+node_modules
+coverage
+
+# v1 application — superseded, not evolved (ADR-016). It remains operational
+# until v2 replaces it, so v2 tooling must not touch it. `prettier --write .`
+# reformatted these once; this list is why it cannot happen again.
+backend
+frontend
+archive
+render.yaml
+DEPLOYMENT.md
+README.md
+.github/workflows/ci.yml
+
+# Approved architecture documentation — frozen, never reformatted
+contentos-docs
+
+# Generated
+pnpm-lock.yaml

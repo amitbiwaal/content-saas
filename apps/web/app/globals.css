@@ -1,0 +1,18 @@
+/* Design tokens are authoritative and arrive with the design system in
+   Sprint 5 (`15-application-ui/design-system.md`). This file holds only a
+   reset, so nothing here has to be unpicked later. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  line-height: 1.5;
+}

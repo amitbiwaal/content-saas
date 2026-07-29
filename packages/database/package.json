@@ -1,0 +1,24 @@
+{
+  "name": "@contentos/database",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Schema, migrations, RLS policies and conformance. The ONLY package permitted to import drizzle-orm.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
