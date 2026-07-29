@@ -13,6 +13,7 @@
       "@contentos/contracts": ["./packages/contracts/src/index.ts"],
       "@contentos/observability": ["./packages/observability/src/index.ts"],
       "@contentos/database": ["./packages/database/src/index.ts"],
+      "@contentos/events": ["./packages/events/src/index.ts"],
       "@contentos/security": ["./packages/security/src/index.ts"]
     }
   },
@@ -20,6 +21,7 @@
     "packages/*/src/**/*.ts",
     "packages/*/*.config.ts",
     "services/*/src/**/*.ts",
+    "workers/*/src/**/*.ts",
     "tests/**/*.ts",
     "vitest.config.ts"
   ]

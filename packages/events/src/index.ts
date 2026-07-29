@@ -126,3 +126,13 @@ export {
   DEFAULT_MAX_ATTEMPTS,
   isTransientRedisError,
 } from './bus/redis-streams.js';
+
+// The concrete driver binding. Exported so a worker can construct a client
+// WITHOUT importing `ioredis` itself — raw client access is how unprefixed,
+// cross-tenant keys get created, so it stays behind this barrel.
+export type { ManagedRedisClient, RedisConnectionOptions } from './bus/ioredis-client.js';
+export {
+  createRedisClient,
+  DEFAULT_READY_TIMEOUT_MS,
+  REDIS_CLIENT_DEFAULTS,
+} from './bus/ioredis-client.js';

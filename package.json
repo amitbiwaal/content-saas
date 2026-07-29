@@ -25,7 +25,7 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "boundaries": "depcruise services packages --config .dependency-cruiser.cjs",
+    "boundaries": "depcruise services packages workers --config .dependency-cruiser.cjs",
     "unused": "knip",
     "verify": "pnpm typecheck && pnpm lint && pnpm boundaries && pnpm unused && pnpm format && pnpm test"
   },

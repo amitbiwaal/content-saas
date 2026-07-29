@@ -1,9 +1,9 @@
 {
-  "name": "@contentos/events",
+  "name": "@contentos/worker-host",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Transactional outbox, relay, dispatcher, registry, retry, DLQ, idempotency, replay (ADR-020/027/028).",
+  "description": "The single worker binary. Handler sets are selected by configuration.",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@contentos/contracts": "workspace:*",
-    "ioredis": "5.4.2"
+    "@contentos/events": "workspace:*"
   },
   "devDependencies": {}
 }
