@@ -72,3 +72,33 @@ export type {
   RegisteredHandler,
 } from './delivery/dispatcher.js';
 export { createDispatcher } from './delivery/dispatcher.js';
+
+// Dead letter queue — ADR-027
+export type {
+  DeadLetterQuery,
+  DeadLetterQueue,
+  DeadLetterQueueOptions,
+  DeadLetterRow,
+  DeadLetterSource,
+  DeadLetterStatus,
+  FailureGroup,
+  NewDeadLetterEntry,
+  ReplayAttemptOutcome,
+  RetryAttempt,
+} from './dlq/dead-letter-queue.js';
+export { createDeadLetterQueue, PUBLISH_SENTINEL_GROUP } from './dlq/dead-letter-queue.js';
+
+// Outbox relay — ADR-020
+export type {
+  OutboxRow,
+  PublishResult,
+  Relay,
+  RelayCycleResult,
+  RelayDeps,
+} from './relay/relay.js';
+export {
+  createRelay,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_MAX_PUBLISH_ATTEMPTS,
+  toEvent,
+} from './relay/relay.js';
