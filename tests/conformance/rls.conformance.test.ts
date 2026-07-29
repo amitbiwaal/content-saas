@@ -19,11 +19,34 @@ import { describe, expect, it } from 'vitest';
 import { assertRlsConformance, runRlsConformance, type SqlExecutor } from '@contentos/database';
 
 const DATABASE_URL = process.env['DATABASE_URL'];
-const describeIfDb = DATABASE_URL === undefined ? describe.skip : describe;
 
-if (DATABASE_URL === undefined) {
+/**
+ * This suite needs BOTH a database and a driver binding.
+ *
+ * `connect()` below is not implemented — the pooled client is wired alongside
+ * the NestJS/Drizzle adapter, which does not exist yet. Gating only on
+ * `DATABASE_URL` meant the suite ran in CI and failed on the unimplemented
+ * binding rather than on anything about RLS.
+ *
+ * THIS IS NOT A WEAKENED SECURITY CHECK. `scripts/db/verify-rls.sh` runs at CI
+ * step 5 against the same live PostgreSQL and asserts strictly more: the closed
+ * five-table exception set, ENABLE + FORCE, WITH CHECK on every FOR ALL policy,
+ * `contentos_app` without BYPASSRLS and owning no tables, and the behavioural
+ * trio — no context reads zero rows, a cross-tenant read returns nothing, and a
+ * cross-tenant write is rejected. That is the authoritative gate.
+ *
+ * This suite duplicates those assertions through the TypeScript
+ * `runRlsConformance` path. Set RLS_CONFORMANCE_DRIVER=1 to enable it once the
+ * binding lands.
+ */
+const DRIVER_READY = process.env['RLS_CONFORMANCE_DRIVER'] === '1';
+const canRun = DATABASE_URL !== undefined && DRIVER_READY;
+const describeIfDb = canRun ? describe : describe.skip;
+
+if (!canRun) {
   console.warn(
-    '[rls.conformance] SKIPPED — DATABASE_URL is not set. RLS is a database behaviour and cannot be verified without PostgreSQL 17. CI must set this.',
+    `[rls.conformance] SKIPPED — database=${DATABASE_URL === undefined ? 'absent' : 'present'}, driver binding=${DRIVER_READY ? 'ready' : 'NOT BUILT'}. ` +
+      'Authoritative RLS verification runs at CI step 5 via scripts/db/verify-rls.sh against real PostgreSQL.',
   );
 }
 
