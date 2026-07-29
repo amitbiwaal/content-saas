@@ -270,16 +270,26 @@ describe('scanForCredentials — already-redacted and malformed input', () => {
 });
 
 describe('scanForCredentials — existing behaviour is unchanged', () => {
+  /**
+   * Every value here is synthetic, and has to STAY credential-shaped: a fixture
+   * watered down until a scanner ignores it no longer proves the scanner it is
+   * actually testing still works.
+   *
+   * The three `gitleaks:allow` markers are the three the repo secret scanner
+   * flags. They are per-line rather than a path allowlist in `.gitleaks.toml`
+   * on purpose — exempting the whole file would stop gitleaks catching a real
+   * secret pasted in here later.
+   */
   const CASES: readonly (readonly [string, string])[] = [
     ['bearer token', 'Authorization: Bearer abcdefghijklmnopqrstuvwxyz012345'],
     ['basic auth', 'Authorization: Basic YWRtaW46aHVudGVyMnBhc3N3b3Jk'],
-    ['openai key', 'key=sk-ABCDEFGHIJKLMNOPQRSTUVWX'],
+    ['openai key', 'key=sk-ABCDEFGHIJKLMNOPQRSTUVWX'], // gitleaks:allow
     ['github token', 'token ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123'],
-    ['slack token', 'xoxb-1234567890-ABCDEFGHIJ'],
+    ['slack token', 'xoxb-1234567890-ABCDEFGHIJ'], // gitleaks:allow
     ['aws access key', 'AKIAIOSFODNN7EXAMPLE'],
     [
       'jwt',
-      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U',
+      'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U', // gitleaks:allow
     ],
     ['private key', '-----BEGIN RSA PRIVATE KEY-----'],
     ['presigned url', 'https://s3.example.com/o?X-Amz-Signature=abcdef0123456789'],
