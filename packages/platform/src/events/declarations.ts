@@ -30,6 +30,7 @@ import type {
 } from '@contentos/contracts';
 
 import { CREDIT_EVENT_TYPES, CREDIT_PRODUCER } from '../credits/events.js';
+import { FEATURE_FLAG_EVENT_TYPES, FEATURE_FLAG_PRODUCER } from '../flags/events.js';
 import { CREDIT_HOLD_EVENT_TYPES, CREDIT_THRESHOLD_EVENT_TYPES } from '../credits/hold-events.js';
 import {
   MEMBERSHIP_PRODUCER,
@@ -256,6 +257,20 @@ const SETTINGS_RESOLUTION_DECLARATIONS: readonly EventTypeDeclaration[] = SETTIN
   (eventType) => declare(eventType, SETTINGS_PRODUCER, SETTINGS_STREAM, 'organization'),
 );
 
+/**
+ * On the SETTINGS stream, not one of its own.
+ *
+ * A flag override and a setting live in the same JSONB column and advance the
+ * same version, so a consumer that cares about one cares about the other. A
+ * separate stream would make each read past the other's traffic to find the
+ * invalidation it needed.
+ *
+ * No consumers: this increment publishes and nothing reacts.
+ */
+const FEATURE_FLAG_DECLARATIONS: readonly EventTypeDeclaration[] = FEATURE_FLAG_EVENT_TYPES.map(
+  (eventType) => declare(eventType, FEATURE_FLAG_PRODUCER, SETTINGS_STREAM, 'organization'),
+);
+
 export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...ORGANIZATION_DECLARATIONS,
   ...ORGANIZATION_MEMBERSHIP_DECLARATIONS,
@@ -264,6 +279,7 @@ export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...SETTINGS_DECLARATIONS,
   ...CREDIT_DECLARATIONS,
   ...SETTINGS_RESOLUTION_DECLARATIONS,
+  ...FEATURE_FLAG_DECLARATIONS,
 ];
 
 /**
@@ -283,6 +299,7 @@ export const PLATFORM_EMITTABLE_EVENT_TYPES: readonly string[] = [
   ...CREDIT_HOLD_EVENT_TYPES,
   ...CREDIT_THRESHOLD_EVENT_TYPES,
   ...SETTINGS_EVENT_TYPES,
+  ...FEATURE_FLAG_EVENT_TYPES,
 ];
 
 /** What a composition root includes to register this package's event types. */

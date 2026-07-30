@@ -482,6 +482,50 @@ export {
   settingsChanged,
 } from './settings/resolution-events.js';
 
+// Feature flag registry — source-controlled, the contract for every flag
+export type {
+  FeatureFlagDeclaration,
+  FeatureFlagErrorCode,
+  FeatureFlagRegistry,
+  FlagKind,
+  FlagLayer,
+  FlagScope,
+} from './flags/registry.js';
+export {
+  BUILT_IN_FLAGS,
+  createFeatureFlagRegistry,
+  FeatureFlagError,
+  FLAG_KEY_PREFIX,
+  FLAG_KINDS,
+  FLAG_LAYERS,
+  FLAG_SCOPES,
+  settingKeyFor,
+} from './flags/registry.js';
+
+// Feature Flag Resolver — evaluation over the Settings Resolver's cache
+export type {
+  FeatureFlagResolver,
+  FeatureFlagResolverOptions,
+  FlagAnomaly,
+  FlagChangeCommand,
+  FlagEvaluation,
+  FlagSnapshot,
+} from './flags/resolver.js';
+export { createFeatureFlagResolver } from './flags/resolver.js';
+
+// FeatureFlagChanged — shares the settings aggregate and stream
+export type {
+  FeatureFlagChangedPayload,
+  FeatureFlagEventContext,
+  FeatureFlagEventType,
+} from './flags/events.js';
+export {
+  FEATURE_FLAG_CHANGED,
+  FEATURE_FLAG_EVENT_TYPES,
+  FEATURE_FLAG_PRODUCER,
+  featureFlagChanged,
+} from './flags/events.js';
+
 // Event registry declarations — what a composition root registers.
 export {
   CREDIT_STREAM,

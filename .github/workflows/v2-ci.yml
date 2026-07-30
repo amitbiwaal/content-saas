@@ -285,6 +285,17 @@ jobs:
             exit 1
           fi
 
+      # Flags add no tables; what is verified is the namespace and boolean
+      # fidelity through the shared settings JSONB, which is what the resolver
+      # type-checks against.
+      - name: 5e · feature flag layer verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-feature-flags.sh 2>&1 | tee ci-logs/flags-verification.log; then
+            echo "::error title=Feature flag verification failed::$(tail -30 ci-logs/flags-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -342,6 +353,14 @@ jobs:
         with:
           name: settings-verification-logs
           path: ci-logs/settings-verification.log
+          if-no-files-found: warn
+
+      - name: upload feature flag verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flags-verification-logs
+          path: ci-logs/flags-verification.log
           if-no-files-found: warn
 
       - name: upload service logs
