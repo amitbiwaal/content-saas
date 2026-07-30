@@ -262,6 +262,18 @@ jobs:
             exit 1
           fi
 
+      # The Sprint Gate: no double-charge under concurrency, exactly-once
+      # financial effect, and the projection reconciling with the ledger. The
+      # races run in genuinely parallel backends — an in-process fake cannot
+      # show that an advisory lock serialises across connections.
+      - name: 5c · credits verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-credits.sh 2>&1 | tee ci-logs/credits-verification.log; then
+            echo "::error title=Credits verification failed::$(tail -30 ci-logs/credits-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -303,6 +315,14 @@ jobs:
         with:
           name: ledger-verification-logs
           path: ci-logs/ledger-verification.log
+          if-no-files-found: warn
+
+      - name: upload credits verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: credits-verification-logs
+          path: ci-logs/credits-verification.log
           if-no-files-found: warn
 
       - name: upload service logs

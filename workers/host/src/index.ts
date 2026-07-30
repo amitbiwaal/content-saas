@@ -84,3 +84,22 @@ export {
   composeCascadeWorker,
   subscriptionsFor,
 } from './cascade/composition.js';
+
+// Credits hold-release consumers — runtime execution for the Credits Service.
+export type { CreditsHandlerDeps } from './credits/handlers.js';
+export {
+  CREDITS_ACTOR,
+  createCreditsHandlers,
+  HOLD_RELEASE_FAILED,
+  HoldReleaseFailedError,
+} from './credits/handlers.js';
+
+export type { CreditsRunner } from './credits/ports.js';
+export { createCreditsRunner } from './credits/ports.js';
+
+export type { CreditsWorkerComposition, CreditsWorkerOptions } from './credits/composition.js';
+export {
+  composeCreditsWorker,
+  CREDITS_CONSUMER_GROUPS,
+  creditsSubscriptions,
+} from './credits/composition.js';

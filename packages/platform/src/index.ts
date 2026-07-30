@@ -349,9 +349,98 @@ export {
   MAX_LEDGER_PAGE,
 } from './credits/service.js';
 
+// Credit amounts — exact decimal arithmetic, never a float
+export type { ScaledAmount } from './credits/amount.js';
+export {
+  addAmounts,
+  AMOUNT_SCALE,
+  compareAmounts,
+  formatAmount,
+  isNegative,
+  isZeroOrLess,
+  parseAmount,
+  parseSigned,
+  subtractAmounts,
+  sumOrZero,
+  ZERO,
+} from './credits/amount.js';
+
+// Credit holds — the reservation model
+export type { CreditHold, HoldClosure, HoldErrorCode, HoldState } from './credits/holds.js';
+export {
+  assertFitsWithinHold,
+  DEFAULT_HOLD_TTL_MS,
+  HOLD_STATES,
+  HoldError,
+  InsufficientCreditsError,
+  isHoldState,
+  isTerminal,
+  OPEN_HOLD_STATE,
+  remainingOf,
+  stateFor,
+  TERMINAL_HOLD_STATES,
+} from './credits/holds.js';
+
+// Balance read model — watermarked projection with a ledger fallback
+export type {
+  BalanceExecutor,
+  BalanceReading,
+  BalanceSource,
+  ProjectionResult,
+  ThresholdState,
+} from './credits/balance.js';
+export {
+  classifyThreshold,
+  isThresholdState,
+  parseThreshold,
+  projectBalance,
+  readBalance,
+  reconcile,
+} from './credits/balance.js';
+
+// Hold-protocol and threshold events
+export type {
+  CreditHeldPayload,
+  CreditHoldEventPayload,
+  CreditHoldEventType,
+  CreditReleasedPayload,
+  CreditSettledPayload,
+  CreditsThresholdPayload,
+  CreditThresholdEventType,
+  ReleaseCause,
+} from './credits/hold-events.js';
+export {
+  CREDIT_HOLD_EVENT_TYPES,
+  CREDIT_THRESHOLD_EVENT_TYPES,
+  creditHeld,
+  creditReleased,
+  creditSettled,
+  creditsExhausted,
+  creditsLow,
+} from './credits/hold-events.js';
+
+// Credits Service — hold → consume → settle over the immutable ledger
+export type {
+  AuthorizationResult,
+  AuthorizeSpendCommand,
+  BulkReleaseCommand,
+  BulkReleaseResult,
+  CloseHoldCommand,
+  ConsumptionResult,
+  CreditsExecutor,
+  CreditsService,
+  CreditsServiceOptions,
+  HoldClosureResult,
+  RecordConsumptionCommand,
+  ReleaseHoldCommand,
+} from './credits/credits-service.js';
+export { createCreditsService } from './credits/credits-service.js';
+
 // Event registry declarations — what a composition root registers.
 export {
   CREDIT_STREAM,
+  CREDITS_ORGANIZATION_RELEASE_GROUP,
+  CREDITS_WORKSPACE_RELEASE_GROUP,
   ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
   ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,

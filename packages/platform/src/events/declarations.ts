@@ -30,6 +30,7 @@ import type {
 } from '@contentos/contracts';
 
 import { CREDIT_EVENT_TYPES, CREDIT_PRODUCER } from '../credits/events.js';
+import { CREDIT_HOLD_EVENT_TYPES, CREDIT_THRESHOLD_EVENT_TYPES } from '../credits/hold-events.js';
 import {
   MEMBERSHIP_PRODUCER,
   ORGANIZATION_MEMBERSHIP_EVENT_TYPES,
@@ -83,22 +84,46 @@ export const CREDIT_STREAM = 'credit';
 export const ORGANIZATION_LIFECYCLE_CASCADE_GROUP = 'organization-lifecycle-cascade';
 export const ORGANIZATION_MEMBERSHIP_CASCADE_GROUP = 'organization-membership-cascade';
 
-/** The component hosting both groups — the single worker binary. */
-const CASCADE_COMPONENT = 'workers.host.cascade';
+/**
+ * The two credit hold-release groups.
+ *
+ * Separate from the cascade groups, and separate from each other, because they
+ * read DIFFERENT STREAMS: an organization suspension arrives on `organization`
+ * and a workspace suspension on `workspace`. One group cannot read both, and
+ * merging them would mean one of the two events never being delivered — a group
+ * that starts cleanly, heartbeats healthily and silently leaves credits
+ * reserved against a suspended customer.
+ *
+ * Separate from the cascade groups because their failure means something
+ * different: a stalled cascade leaves stale permissions, a stalled hold release
+ * leaves a suspended customer's balance reserved against runs that will never
+ * happen.
+ */
+export const CREDITS_ORGANIZATION_RELEASE_GROUP = 'credits-organization-hold-release';
+export const CREDITS_WORKSPACE_RELEASE_GROUP = 'credits-workspace-hold-release';
 
-function cascadeConsumer(consumerGroup: string): ConsumerDeclaration {
+/** The component hosting both cascade groups — the single worker binary. */
+const CASCADE_COMPONENT = 'workers.host.cascade';
+/** The credits groups, hosted by the same binary but separately observable. */
+const CREDITS_COMPONENT = 'workers.host.credits';
+
+function consumer(consumerGroup: string, component: string): ConsumerDeclaration {
   return {
     consumerGroup,
-    component: CASCADE_COMPONENT,
+    component,
     versions: [1],
-    // Both cascades page on a DLQ entry: an active workspace under a suspended
-    // organization is a revenue-integrity failure, and a member who kept access
-    // after revocation is a security one.
+    // Every one of these pages on a DLQ entry: an active workspace under a
+    // suspended organization is a revenue-integrity failure, a member who kept
+    // access after revocation is a security one, and a hold left open against a
+    // suspended customer is money reserved for work that will never run.
     criticality: 'critical',
     handlerIdempotencyKey: consumerGroup,
     onUnknownVersion: 'dead-letter',
   };
 }
+
+const cascadeConsumer = (group: string): ConsumerDeclaration => consumer(group, CASCADE_COMPONENT);
+const creditsConsumer = (group: string): ConsumerDeclaration => consumer(group, CREDITS_COMPONENT);
 
 function declare(
   eventType: string,
@@ -118,11 +143,22 @@ function declare(
   };
 }
 
-/** Which cascade group, if any, consumes a given organization-scoped type. */
-const CASCADE_CONSUMERS: Readonly<Record<string, readonly ConsumerDeclaration[]>> = {
-  OrganizationSuspended: [cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP)],
+/**
+ * Which groups consume a given type.
+ *
+ * `OrganizationSuspended` now has two, and they are deliberately independent:
+ * the workspace cascade and the hold release neither depend on nor block each
+ * other, so one failing must not stop the other. Separate groups is what makes
+ * that true — a shared group would retry both when either failed.
+ */
+const CONSUMERS_BY_TYPE: Readonly<Record<string, readonly ConsumerDeclaration[]>> = {
+  OrganizationSuspended: [
+    cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP),
+    creditsConsumer(CREDITS_ORGANIZATION_RELEASE_GROUP),
+  ],
   OrganizationReactivated: [cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP)],
   OrgMembershipRevoked: [cascadeConsumer(ORGANIZATION_MEMBERSHIP_CASCADE_GROUP)],
+  WorkspaceSuspended: [creditsConsumer(CREDITS_WORKSPACE_RELEASE_GROUP)],
 };
 
 /**
@@ -137,7 +173,7 @@ const ORGANIZATION_DECLARATIONS: readonly EventTypeDeclaration[] = ORGANIZATION_
       ORGANIZATION_PRODUCER,
       ORGANIZATION_STREAM,
       'organization',
-      CASCADE_CONSUMERS[eventType],
+      CONSUMERS_BY_TYPE[eventType],
     ),
 );
 
@@ -149,13 +185,20 @@ const ORGANIZATION_MEMBERSHIP_DECLARATIONS: readonly EventTypeDeclaration[] =
       MEMBERSHIP_PRODUCER,
       ORGANIZATION_STREAM,
       'organization',
-      CASCADE_CONSUMERS[eventType],
+      CONSUMERS_BY_TYPE[eventType],
     ),
   );
 
 /** Workspace-scoped: `workspaces.id` IS `tenant_id` (ADR-017). */
 const WORKSPACE_DECLARATIONS: readonly EventTypeDeclaration[] = WORKSPACE_EVENT_TYPES.map(
-  (eventType) => declare(eventType, WORKSPACE_PRODUCER, WORKSPACE_STREAM, 'workspace'),
+  (eventType) =>
+    declare(
+      eventType,
+      WORKSPACE_PRODUCER,
+      WORKSPACE_STREAM,
+      'workspace',
+      CONSUMERS_BY_TYPE[eventType],
+    ),
 );
 
 const WORKSPACE_MEMBERSHIP_DECLARATIONS: readonly EventTypeDeclaration[] =
@@ -179,9 +222,14 @@ const SETTINGS_DECLARATIONS: readonly EventTypeDeclaration[] = [
  * to start a group with no handler, so a group is declared in the increment that
  * supplies its handler.
  */
-const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = CREDIT_EVENT_TYPES.map((eventType) =>
-  declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization'),
-);
+const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = [
+  ...CREDIT_EVENT_TYPES,
+  // T3.4 left these undeclared because nothing could emit them. The hold
+  // protocol and the balance engine exist as of T3.5, so they are declared with
+  // the service that emits them.
+  ...CREDIT_HOLD_EVENT_TYPES,
+  ...CREDIT_THRESHOLD_EVENT_TYPES,
+].map((eventType) => declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization'));
 
 export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...ORGANIZATION_DECLARATIONS,
@@ -206,6 +254,8 @@ export const PLATFORM_EMITTABLE_EVENT_TYPES: readonly string[] = [
   ...WORKSPACE_MEMBERSHIP_EVENT_TYPES,
   WORKSPACE_SETTINGS_UPDATED,
   ...CREDIT_EVENT_TYPES,
+  ...CREDIT_HOLD_EVENT_TYPES,
+  ...CREDIT_THRESHOLD_EVENT_TYPES,
 ];
 
 /** What a composition root includes to register this package's event types. */

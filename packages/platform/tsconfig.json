@@ -12,6 +12,6 @@
     }
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["src/**/*.test.ts", "dist"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts", "dist"],
   "references": [{ "path": "../contracts" }, { "path": "../security" }]
 }

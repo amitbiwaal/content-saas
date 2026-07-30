@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CREDIT_EVENT_TYPES, CREDIT_PRODUCER } from '../credits/events.js';
+import { CREDIT_HOLD_EVENT_TYPES, CREDIT_THRESHOLD_EVENT_TYPES } from '../credits/hold-events.js';
 import {
   MEMBERSHIP_PRODUCER,
   ORGANIZATION_MEMBERSHIP_EVENT_TYPES,
@@ -19,6 +20,8 @@ import { WORKSPACE_SETTINGS_UPDATED } from '../settings/events.js';
 import { WORKSPACE_EVENT_TYPES, WORKSPACE_PRODUCER } from '../workspaces/events.js';
 import {
   CREDIT_STREAM,
+  CREDITS_ORGANIZATION_RELEASE_GROUP,
+  CREDITS_WORKSPACE_RELEASE_GROUP,
   ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
   ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,
@@ -48,16 +51,18 @@ describe('coverage — every emittable type is declared', () => {
   // Stated as the sum of the families rather than as a literal: a bare number
   // has to be re-guessed every time a family grows, and the interesting failure
   // is a family that stopped being covered, not a count that moved.
-  it('covers every family — nineteen from Sprint 1 plus the five ledger types', () => {
+  it('covers every family — nineteen from Sprint 1, five ledger, five credits', () => {
     const expected =
       ORGANIZATION_EVENT_TYPES.length +
       ORGANIZATION_MEMBERSHIP_EVENT_TYPES.length +
       WORKSPACE_EVENT_TYPES.length +
       WORKSPACE_MEMBERSHIP_EVENT_TYPES.length +
       1 + // WorkspaceSettingsUpdated
-      CREDIT_EVENT_TYPES.length;
+      CREDIT_EVENT_TYPES.length +
+      CREDIT_HOLD_EVENT_TYPES.length +
+      CREDIT_THRESHOLD_EVENT_TYPES.length;
 
-    expect(expected).toBe(24);
+    expect(expected).toBe(29);
     expect(PLATFORM_EVENT_DECLARATIONS).toHaveLength(expected);
     expect(PLATFORM_EMITTABLE_EVENT_TYPES).toHaveLength(expected);
     expect(new Set(PLATFORM_EMITTABLE_EVENT_TYPES).size).toBe(expected);
@@ -177,9 +182,19 @@ describe('cascade consumer groups', () => {
   // Suspension and reactivation are the same aggregate's ordered lifecycle:
   // split across two groups, a lagging suspension could be applied AFTER the
   // reactivation meant to undo it.
-  it('puts suspension and reactivation in ONE group', () => {
-    expect(groupsOf('OrganizationSuspended')).toEqual([ORGANIZATION_LIFECYCLE_CASCADE_GROUP]);
+  it('puts suspension and reactivation in ONE cascade group', () => {
+    expect(groupsOf('OrganizationSuspended')).toContain(ORGANIZATION_LIFECYCLE_CASCADE_GROUP);
     expect(groupsOf('OrganizationReactivated')).toEqual([ORGANIZATION_LIFECYCLE_CASCADE_GROUP]);
+  });
+
+  // T3.5 added a second, independent consumer of the suspension: releasing
+  // credit holds. Its own group, so a failure in either does not retry or block
+  // the other — they share nothing but the event.
+  it('lets the credits release consume the suspension alongside the cascade', () => {
+    expect(groupsOf('OrganizationSuspended')).toEqual([
+      ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
+      CREDITS_ORGANIZATION_RELEASE_GROUP,
+    ]);
   });
 
   // A different aggregate, so no shared ordering constraint — and its lag and
@@ -188,7 +203,9 @@ describe('cascade consumer groups', () => {
     expect(groupsOf('OrgMembershipRevoked')).toEqual([ORGANIZATION_MEMBERSHIP_CASCADE_GROUP]);
   });
 
-  it('declares consumers on exactly those three types and no others', () => {
+  // Every consumed type, and nothing else. A group declared against a type no
+  // handler runs is a Redis offset nobody advances.
+  it('declares consumers on exactly four types and no others', () => {
     const consumed = PLATFORM_EVENT_DECLARATIONS.filter((d) => d.consumers.length > 0).map(
       (d) => d.eventType,
     );
@@ -196,10 +213,15 @@ describe('cascade consumer groups', () => {
       'OrgMembershipRevoked',
       'OrganizationReactivated',
       'OrganizationSuspended',
+      'WorkspaceSuspended',
     ]);
   });
 
-  it('marks both cascades critical — each pages for its own reason', () => {
+  it('gives the workspace suspension only the credits group', () => {
+    expect(groupsOf('WorkspaceSuspended')).toEqual([CREDITS_WORKSPACE_RELEASE_GROUP]);
+  });
+
+  it('marks every consumer critical — each pages for its own reason', () => {
     for (const declaration of PLATFORM_EVENT_DECLARATIONS) {
       for (const consumer of declaration.consumers) {
         expect(consumer.criticality, declaration.eventType).toBe('critical');
