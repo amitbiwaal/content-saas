@@ -115,10 +115,23 @@ export const ORGANIZATION_MEMBERSHIP_CASCADE_GROUP = 'organization-membership-ca
 export const CREDITS_ORGANIZATION_RELEASE_GROUP = 'credits-organization-hold-release';
 export const CREDITS_WORKSPACE_RELEASE_GROUP = 'credits-workspace-hold-release';
 
+/**
+ * The two notification groups.
+ *
+ * Two because they read different streams — the credit thresholds are on
+ * `credit`, the settings and flag changes on `settings` — and a consumer group
+ * reads one stream. Separate from every other group because their failure means
+ * something different again: nobody was told.
+ */
+export const NOTIFICATIONS_BILLING_GROUP = 'notifications-billing';
+export const NOTIFICATIONS_PLATFORM_GROUP = 'notifications-platform';
+
 /** The component hosting both cascade groups — the single worker binary. */
 const CASCADE_COMPONENT = 'workers.host.cascade';
 /** The credits groups, hosted by the same binary but separately observable. */
 const CREDITS_COMPONENT = 'workers.host.credits';
+/** The notification groups, separately observable from the rest. */
+const NOTIFICATIONS_COMPONENT = 'workers.host.notifications';
 
 function consumer(consumerGroup: string, component: string): ConsumerDeclaration {
   return {
@@ -137,6 +150,8 @@ function consumer(consumerGroup: string, component: string): ConsumerDeclaration
 
 const cascadeConsumer = (group: string): ConsumerDeclaration => consumer(group, CASCADE_COMPONENT);
 const creditsConsumer = (group: string): ConsumerDeclaration => consumer(group, CREDITS_COMPONENT);
+const notificationsConsumer = (group: string): ConsumerDeclaration =>
+  consumer(group, NOTIFICATIONS_COMPONENT);
 
 function declare(
   eventType: string,
@@ -172,6 +187,13 @@ const CONSUMERS_BY_TYPE: Readonly<Record<string, readonly ConsumerDeclaration[]>
   OrganizationReactivated: [cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP)],
   OrgMembershipRevoked: [cascadeConsumer(ORGANIZATION_MEMBERSHIP_CASCADE_GROUP)],
   WorkspaceSuspended: [creditsConsumer(CREDITS_WORKSPACE_RELEASE_GROUP)],
+  // T3.8 — notification records only. Adding a consumer to a type does not
+  // touch the service that PRODUCES it: Credits, Settings and Feature Flags are
+  // unchanged, and none of them knows a notification exists.
+  CreditsLow: [notificationsConsumer(NOTIFICATIONS_BILLING_GROUP)],
+  CreditsExhausted: [notificationsConsumer(NOTIFICATIONS_BILLING_GROUP)],
+  SettingsChanged: [notificationsConsumer(NOTIFICATIONS_PLATFORM_GROUP)],
+  FeatureFlagChanged: [notificationsConsumer(NOTIFICATIONS_PLATFORM_GROUP)],
 };
 
 /**
@@ -242,7 +264,9 @@ const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   // the service that emits them.
   ...CREDIT_HOLD_EVENT_TYPES,
   ...CREDIT_THRESHOLD_EVENT_TYPES,
-].map((eventType) => declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization'));
+].map((eventType) =>
+  declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization', CONSUMERS_BY_TYPE[eventType]),
+);
 
 /**
  * Organization-scoped: the settings tree belongs to the organization (ADR-029),
@@ -250,11 +274,19 @@ const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = [
  * ordered against each other. `scopeId` in the payload names the workspace for
  * attribution; a consumer must not rebuild workspace tenant context from it.
  *
- * No consumers: this increment publishes the event and nothing reacts. A group
- * is declared in the increment that supplies its handler.
+ * T3.8 subscribes the platform notification group. The Settings Resolver is
+ * unchanged by that: a consumer is declared against the TYPE, and the service
+ * that emits it does not know a consumer exists.
  */
 const SETTINGS_RESOLUTION_DECLARATIONS: readonly EventTypeDeclaration[] = SETTINGS_EVENT_TYPES.map(
-  (eventType) => declare(eventType, SETTINGS_PRODUCER, SETTINGS_STREAM, 'organization'),
+  (eventType) =>
+    declare(
+      eventType,
+      SETTINGS_PRODUCER,
+      SETTINGS_STREAM,
+      'organization',
+      CONSUMERS_BY_TYPE[eventType],
+    ),
 );
 
 /**
@@ -265,10 +297,18 @@ const SETTINGS_RESOLUTION_DECLARATIONS: readonly EventTypeDeclaration[] = SETTIN
  * separate stream would make each read past the other's traffic to find the
  * invalidation it needed.
  *
- * No consumers: this increment publishes and nothing reacts.
+ * T3.8 subscribes the platform notification group here too, for the same
+ * reason: one group reads one stream, and both types are on this one.
  */
 const FEATURE_FLAG_DECLARATIONS: readonly EventTypeDeclaration[] = FEATURE_FLAG_EVENT_TYPES.map(
-  (eventType) => declare(eventType, FEATURE_FLAG_PRODUCER, SETTINGS_STREAM, 'organization'),
+  (eventType) =>
+    declare(
+      eventType,
+      FEATURE_FLAG_PRODUCER,
+      SETTINGS_STREAM,
+      'organization',
+      CONSUMERS_BY_TYPE[eventType],
+    ),
 );
 
 export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [

@@ -209,14 +209,20 @@ describe('cascade consumer groups', () => {
 
   // Every consumed type, and nothing else. A group declared against a type no
   // handler runs is a Redis offset nobody advances.
-  it('declares consumers on exactly four types and no others', () => {
+  it('declares consumers on exactly the eight consumed types and no others', () => {
     const consumed = PLATFORM_EVENT_DECLARATIONS.filter((d) => d.consumers.length > 0).map(
       (d) => d.eventType,
     );
     expect([...consumed].sort()).toEqual([
+      // T3.8 — notification records.
+      'CreditsExhausted',
+      'CreditsLow',
+      'FeatureFlagChanged',
+      // T3.2 / T3.5 — cascades and credit hold release.
       'OrgMembershipRevoked',
       'OrganizationReactivated',
       'OrganizationSuspended',
+      'SettingsChanged',
       'WorkspaceSuspended',
     ]);
   });

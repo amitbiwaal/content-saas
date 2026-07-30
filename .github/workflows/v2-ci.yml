@@ -296,6 +296,17 @@ jobs:
             exit 1
           fi
 
+      # Immutability here is a COLUMN-level grant: `payload` and `type` are
+      # unmodifiable because the role was never given UPDATE on them. No test
+      # against a fake can observe a privilege that was withheld.
+      - name: 5f · notification verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-notifications.sh 2>&1 | tee ci-logs/notifications-verification.log; then
+            echo "::error title=Notification verification failed::$(tail -30 ci-logs/notifications-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -361,6 +372,14 @@ jobs:
         with:
           name: flags-verification-logs
           path: ci-logs/flags-verification.log
+          if-no-files-found: warn
+
+      - name: upload notification verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: notifications-verification-logs
+          path: ci-logs/notifications-verification.log
           if-no-files-found: warn
 
       - name: upload service logs

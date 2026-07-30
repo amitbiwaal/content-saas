@@ -526,11 +526,66 @@ export {
   featureFlagChanged,
 } from './flags/events.js';
 
+// Notification registry — source-controlled, the class catalogue
+export type {
+  NotificationCategory,
+  NotificationChannel,
+  NotificationDeclaration,
+  NotificationErrorCode,
+  NotificationPriority,
+  NotificationRegistry,
+} from './notifications/registry.js';
+export {
+  BUILT_IN_NOTIFICATIONS,
+  createNotificationRegistry,
+  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_CHANNELS,
+  NOTIFICATION_PRIORITIES,
+  NotificationError,
+} from './notifications/registry.js';
+
+// Event → notification class mapping
+export {
+  dedupeKeyFor,
+  NOTIFIABLE_EVENT_TYPES,
+  NOTIFICATION_EVENT_MAP,
+  notificationTypeFor,
+  projectPayload,
+} from './notifications/mapping.js';
+
+// Notification Service — create, read, markDelivered, markFailed
+export type {
+  CreateNotificationCommand,
+  CreateNotificationResult,
+  MarkDeliveredCommand,
+  MarkFailedCommand,
+  MarkResult,
+  NotificationActor,
+  NotificationCursor,
+  NotificationExecutor,
+  NotificationPage,
+  NotificationPageQuery,
+  NotificationRecord,
+  NotificationService,
+  NotificationServiceOptions,
+  NotificationStatus,
+} from './notifications/service.js';
+export {
+  createNotificationService,
+  DEFAULT_NOTIFICATION_PAGE,
+  isNotificationStatus,
+  MAX_NOTIFICATION_PAGE,
+  NOTIFICATION_AUDIT_ACTIONS,
+  NOTIFICATION_STATUSES,
+} from './notifications/service.js';
+
 // Event registry declarations — what a composition root registers.
 export {
   CREDIT_STREAM,
   CREDITS_ORGANIZATION_RELEASE_GROUP,
   CREDITS_WORKSPACE_RELEASE_GROUP,
+  NOTIFICATIONS_BILLING_GROUP,
+  NOTIFICATIONS_PLATFORM_GROUP,
   ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
   ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,

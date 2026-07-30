@@ -129,10 +129,12 @@ describe('a real registry accepts it', () => {
     expect(() => createEventRegistry([...PLATFORM_EVENT_DECLARATIONS])).not.toThrow();
   });
 
-  // No consumers this increment; a group is declared with its handler.
-  it('declares no consumer for it yet', () => {
+  // T3.8 subscribed the platform notification group. The Settings Resolver is
+  // unchanged by that: a consumer is declared against the TYPE, and the service
+  // that emits it does not know a consumer exists.
+  it('is consumed only by the notification group', () => {
     const declaration = PLATFORM_EVENT_DECLARATIONS.find((d) => d.eventType === SETTINGS_CHANGED);
-    expect(declaration?.consumers).toEqual([]);
+    expect(declaration?.consumers.map((c) => c.consumerGroup)).toEqual(['notifications-platform']);
     expect(declaration?.tenantScope).toBe('organization');
   });
 });

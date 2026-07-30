@@ -124,11 +124,13 @@ describe('a real registry accepts it', () => {
     expect(() => createEventRegistry([...PLATFORM_EVENT_DECLARATIONS])).not.toThrow();
   });
 
-  it('declares no consumer for it yet', () => {
+  // T3.8 subscribed the platform notification group; Feature Flags is unchanged
+  // by that, and does not know a consumer exists.
+  it('is consumed only by the notification group', () => {
     const declaration = PLATFORM_EVENT_DECLARATIONS.find(
       (d) => d.eventType === FEATURE_FLAG_CHANGED,
     );
-    expect(declaration?.consumers).toEqual([]);
+    expect(declaration?.consumers.map((c) => c.consumerGroup)).toEqual(['notifications-platform']);
     expect(declaration?.tenantScope).toBe('organization');
   });
 

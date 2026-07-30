@@ -103,3 +103,22 @@ export {
   CREDITS_CONSUMER_GROUPS,
   creditsSubscriptions,
 } from './credits/composition.js';
+
+// Notification consumers — records only, no outbound delivery.
+export type { NotificationHandlerDeps } from './notifications/handlers.js';
+export {
+  createNotificationHandlers,
+  NOTIFICATION_WRITE_FAILED,
+  NOTIFICATIONS_ACTOR,
+  NotificationWriteFailedError,
+} from './notifications/handlers.js';
+
+export type {
+  NotificationWorkerComposition,
+  NotificationWorkerOptions,
+} from './notifications/composition.js';
+export {
+  composeNotificationWorker,
+  NOTIFICATION_CONSUMER_GROUPS,
+  notificationSubscriptions,
+} from './notifications/composition.js';
