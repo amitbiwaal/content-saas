@@ -38,6 +38,7 @@ import {
 } from '../memberships/events.js';
 import { ORGANIZATION_EVENT_TYPES, ORGANIZATION_PRODUCER } from '../organizations/events.js';
 import { WORKSPACE_SETTINGS_UPDATED } from '../settings/events.js';
+import { SETTINGS_EVENT_TYPES, SETTINGS_PRODUCER } from '../settings/resolution-events.js';
 import { WORKSPACE_EVENT_TYPES, WORKSPACE_PRODUCER } from '../workspaces/events.js';
 
 /** This package identifies itself in diagnostics and collision detection. */
@@ -62,6 +63,17 @@ export const WORKSPACE_STREAM = 'workspace';
  * the platform can sustain (`04-platform/credits.md` §Performance).
  */
 export const CREDIT_STREAM = 'credit';
+
+/**
+ * The settings tree is its own family too.
+ *
+ * Low volume and organization-aggregated, but kept off the `organization`
+ * stream because its consumers are different: a settings change matters to
+ * every engine holding a resolved policy, and none of them cares about
+ * organization lifecycle. Sharing a stream would make each read past the
+ * other's traffic.
+ */
+export const SETTINGS_STREAM = 'settings';
 
 /**
  * The two cascade consumer groups.
@@ -231,6 +243,19 @@ const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...CREDIT_THRESHOLD_EVENT_TYPES,
 ].map((eventType) => declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization'));
 
+/**
+ * Organization-scoped: the settings tree belongs to the organization (ADR-029),
+ * so an organization-layer change and a workspace-layer change beneath it stay
+ * ordered against each other. `scopeId` in the payload names the workspace for
+ * attribution; a consumer must not rebuild workspace tenant context from it.
+ *
+ * No consumers: this increment publishes the event and nothing reacts. A group
+ * is declared in the increment that supplies its handler.
+ */
+const SETTINGS_RESOLUTION_DECLARATIONS: readonly EventTypeDeclaration[] = SETTINGS_EVENT_TYPES.map(
+  (eventType) => declare(eventType, SETTINGS_PRODUCER, SETTINGS_STREAM, 'organization'),
+);
+
 export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...ORGANIZATION_DECLARATIONS,
   ...ORGANIZATION_MEMBERSHIP_DECLARATIONS,
@@ -238,6 +263,7 @@ export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...WORKSPACE_MEMBERSHIP_DECLARATIONS,
   ...SETTINGS_DECLARATIONS,
   ...CREDIT_DECLARATIONS,
+  ...SETTINGS_RESOLUTION_DECLARATIONS,
 ];
 
 /**
@@ -256,6 +282,7 @@ export const PLATFORM_EMITTABLE_EVENT_TYPES: readonly string[] = [
   ...CREDIT_EVENT_TYPES,
   ...CREDIT_HOLD_EVENT_TYPES,
   ...CREDIT_THRESHOLD_EVENT_TYPES,
+  ...SETTINGS_EVENT_TYPES,
 ];
 
 /** What a composition root includes to register this package's event types. */

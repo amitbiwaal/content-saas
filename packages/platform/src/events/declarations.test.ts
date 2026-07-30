@@ -17,6 +17,7 @@ import {
 } from '../memberships/events.js';
 import { ORGANIZATION_EVENT_TYPES, ORGANIZATION_PRODUCER } from '../organizations/events.js';
 import { WORKSPACE_SETTINGS_UPDATED } from '../settings/events.js';
+import { SETTINGS_EVENT_TYPES } from '../settings/resolution-events.js';
 import { WORKSPACE_EVENT_TYPES, WORKSPACE_PRODUCER } from '../workspaces/events.js';
 import {
   CREDIT_STREAM,
@@ -51,7 +52,7 @@ describe('coverage — every emittable type is declared', () => {
   // Stated as the sum of the families rather than as a literal: a bare number
   // has to be re-guessed every time a family grows, and the interesting failure
   // is a family that stopped being covered, not a count that moved.
-  it('covers every family — nineteen from Sprint 1, five ledger, five credits', () => {
+  it('covers every family — nineteen from Sprint 1, five ledger, five credits, one settings', () => {
     const expected =
       ORGANIZATION_EVENT_TYPES.length +
       ORGANIZATION_MEMBERSHIP_EVENT_TYPES.length +
@@ -60,9 +61,10 @@ describe('coverage — every emittable type is declared', () => {
       1 + // WorkspaceSettingsUpdated
       CREDIT_EVENT_TYPES.length +
       CREDIT_HOLD_EVENT_TYPES.length +
-      CREDIT_THRESHOLD_EVENT_TYPES.length;
+      CREDIT_THRESHOLD_EVENT_TYPES.length +
+      SETTINGS_EVENT_TYPES.length;
 
-    expect(expected).toBe(29);
+    expect(expected).toBe(30);
     expect(PLATFORM_EVENT_DECLARATIONS).toHaveLength(expected);
     expect(PLATFORM_EMITTABLE_EVENT_TYPES).toHaveLength(expected);
     expect(new Set(PLATFORM_EMITTABLE_EVENT_TYPES).size).toBe(expected);

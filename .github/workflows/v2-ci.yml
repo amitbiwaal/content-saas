@@ -274,6 +274,17 @@ jobs:
             exit 1
           fi
 
+      # The resolver reads an RLS-protected table joined to an exception table
+      # from under a workspace tenant. Whether that returns anything is a
+      # property of the policy set, not of the query.
+      - name: 5d · settings layer verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-settings.sh 2>&1 | tee ci-logs/settings-verification.log; then
+            echo "::error title=Settings verification failed::$(tail -30 ci-logs/settings-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -323,6 +334,14 @@ jobs:
         with:
           name: credits-verification-logs
           path: ci-logs/credits-verification.log
+          if-no-files-found: warn
+
+      - name: upload settings verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: settings-verification-logs
+          path: ci-logs/settings-verification.log
           if-no-files-found: warn
 
       - name: upload service logs

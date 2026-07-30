@@ -436,6 +436,52 @@ export type {
 } from './credits/credits-service.js';
 export { createCreditsService } from './credits/credits-service.js';
 
+// Settings key registry — source-controlled, the contract for every key
+export type {
+  SettingDeclaration,
+  SettingLayer,
+  SettingScope,
+  SettingsRegistry,
+  SettingsResolutionErrorCode,
+  SettingType,
+  SettingValue,
+} from './settings/registry.js';
+export {
+  BUILT_IN_SETTINGS,
+  createSettingsRegistry,
+  matchesType,
+  SETTING_LAYERS,
+  SETTING_TYPES,
+  SettingsError,
+} from './settings/registry.js';
+
+// Settings Resolver — hierarchical resolution with provenance (ADR-024)
+export type {
+  InvalidateCommand,
+  ResolutionScope,
+  ResolvedSetting,
+  SettingsAnomaly,
+  SettingsResolutionExecutor,
+  SettingsResolver,
+  SettingsResolverOptions,
+  SettingsSnapshot,
+} from './settings/resolver.js';
+export { createSettingsResolver } from './settings/resolver.js';
+
+// SettingsChanged — the resolver's invalidation announcement
+export type {
+  SettingsChangedPayload,
+  SettingsEventType,
+  SettingsResolutionEventContext,
+} from './settings/resolution-events.js';
+export {
+  SETTINGS_AGGREGATE,
+  SETTINGS_CHANGED,
+  SETTINGS_EVENT_TYPES,
+  SETTINGS_PRODUCER,
+  settingsChanged,
+} from './settings/resolution-events.js';
+
 // Event registry declarations — what a composition root registers.
 export {
   CREDIT_STREAM,
@@ -448,5 +494,6 @@ export {
   PLATFORM_EVENT_DECLARATIONS,
   PLATFORM_REGISTRY_CONTRIBUTION,
   PLATFORM_REGISTRY_SOURCE,
+  SETTINGS_STREAM,
   WORKSPACE_STREAM,
 } from './events/declarations.js';
