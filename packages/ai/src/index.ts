@@ -10,7 +10,8 @@
  * (`07-development-guide/project-structure.md` rule 4).
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
- * pipeline. Still no adapter, no routing, no execution.
+ * pipeline, S2.4 the workflow runtime. Still no adapter, no routing, and
+ * nothing that calls a model.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -169,3 +170,58 @@ export type {
   PromptExecutionResult,
 } from './prompts/execution.js';
 export { completeExecution, prepareExecution } from './prompts/execution.js';
+
+// The workflow runtime — deterministic orchestration between the job lifecycle
+// and the prompt pipeline. It prepares execution; it never performs it.
+export type {
+  WorkflowDefinition,
+  WorkflowIssue,
+  WorkflowStep,
+  WorkflowValidationResult,
+} from './workflow/definition.js';
+export { MAX_WORKFLOW_STEPS, validateWorkflowDefinition } from './workflow/definition.js';
+
+export type {
+  WorkflowErrorCode,
+  WorkflowStatus,
+  WorkflowTransition,
+  WorkflowTransitionRule,
+} from './workflow/state.js';
+export {
+  assertTransitionAllowed as assertWorkflowTransitionAllowed,
+  canTransition as canWorkflowTransition,
+  INITIAL_WORKFLOW_STATUS,
+  isTerminalWorkflowStatus,
+  isWorkflowError,
+  isWorkflowStatus,
+  isWorkflowTransition,
+  TERMINAL_WORKFLOW_STATUSES,
+  transitionsFrom as workflowTransitionsFrom,
+  WORKFLOW_ERROR_CODES,
+  WORKFLOW_STATUSES,
+  WORKFLOW_TRANSITION_RULES,
+  WORKFLOW_TRANSITIONS,
+  WorkflowError,
+} from './workflow/state.js';
+
+export type {
+  StartWorkflowOptions,
+  WorkflowExecution,
+  WorkflowExecutionContext,
+  WorkflowResult,
+  WorkflowState,
+  WorkflowStepResult,
+} from './workflow/engine.js';
+export {
+  awaitExecution,
+  buildRequest,
+  createWorkflowExecution,
+  fail as failWorkflow,
+  idempotencyKeyFor,
+  loadStep,
+  pendingRequest,
+  preparePrompt,
+  recordExecution,
+  resultOf,
+  start as startWorkflow,
+} from './workflow/engine.js';
