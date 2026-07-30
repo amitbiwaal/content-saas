@@ -29,6 +29,7 @@ import type {
   RegistryContribution,
 } from '@contentos/contracts';
 
+import { CREDIT_EVENT_TYPES, CREDIT_PRODUCER } from '../credits/events.js';
 import {
   MEMBERSHIP_PRODUCER,
   ORGANIZATION_MEMBERSHIP_EVENT_TYPES,
@@ -50,6 +51,16 @@ export const PLATFORM_REGISTRY_SOURCE = '@contentos/platform';
  */
 export const ORGANIZATION_STREAM = 'organization';
 export const WORKSPACE_STREAM = 'workspace';
+
+/**
+ * The credit account is its own family, not part of `organization`.
+ *
+ * It shares the organization as `aggregateId`, but a ledger at 10⁹ entries with
+ * a `CreditConsumed` per AI call would set the consumer lag and retention of
+ * every organization lifecycle event to whatever the highest-volume stream on
+ * the platform can sustain (`04-platform/credits.md` §Performance).
+ */
+export const CREDIT_STREAM = 'credit';
 
 /**
  * The two cascade consumer groups.
@@ -156,12 +167,29 @@ const SETTINGS_DECLARATIONS: readonly EventTypeDeclaration[] = [
   declare(WORKSPACE_SETTINGS_UPDATED, WORKSPACE_PRODUCER, WORKSPACE_STREAM, 'workspace'),
 ];
 
+/**
+ * Organization-scoped: balance resolves per organization, so the credit account
+ * is an organization-owned aggregate and `tenantId` is the organization id
+ * (ADR-029). `CreditConsumed` names a workspace in its PAYLOAD for attribution
+ * — a consumer must not mistake that for the tenant scope and rebuild workspace
+ * context from it.
+ *
+ * No consumers yet: the balance read model and cost monitoring are the declared
+ * consumers in `04-platform/credits.md`, and neither exists. Composition refuses
+ * to start a group with no handler, so a group is declared in the increment that
+ * supplies its handler.
+ */
+const CREDIT_DECLARATIONS: readonly EventTypeDeclaration[] = CREDIT_EVENT_TYPES.map((eventType) =>
+  declare(eventType, CREDIT_PRODUCER, CREDIT_STREAM, 'organization'),
+);
+
 export const PLATFORM_EVENT_DECLARATIONS: readonly EventTypeDeclaration[] = [
   ...ORGANIZATION_DECLARATIONS,
   ...ORGANIZATION_MEMBERSHIP_DECLARATIONS,
   ...WORKSPACE_DECLARATIONS,
   ...WORKSPACE_MEMBERSHIP_DECLARATIONS,
   ...SETTINGS_DECLARATIONS,
+  ...CREDIT_DECLARATIONS,
 ];
 
 /**
@@ -177,6 +205,7 @@ export const PLATFORM_EMITTABLE_EVENT_TYPES: readonly string[] = [
   ...WORKSPACE_EVENT_TYPES,
   ...WORKSPACE_MEMBERSHIP_EVENT_TYPES,
   WORKSPACE_SETTINGS_UPDATED,
+  ...CREDIT_EVENT_TYPES,
 ];
 
 /** What a composition root includes to register this package's event types. */

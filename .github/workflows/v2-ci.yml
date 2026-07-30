@@ -252,6 +252,16 @@ jobs:
             exit 1
           fi
 
+      # The ledger's append-only guarantee is a PRIVILEGE, so it is only
+      # observable on a connection that holds it. Runs as contentos_app_login.
+      - name: 5b · credit ledger verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-ledger.sh 2>&1 | tee ci-logs/ledger-verification.log; then
+            echo "::error title=Ledger verification failed::$(tail -30 ci-logs/ledger-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -285,6 +295,14 @@ jobs:
         with:
           name: rls-verification-logs
           path: ci-logs/rls-verification.log
+          if-no-files-found: warn
+
+      - name: upload ledger verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ledger-verification-logs
+          path: ci-logs/ledger-verification.log
           if-no-files-found: warn
 
       - name: upload service logs

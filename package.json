@@ -18,6 +18,7 @@
     "db:reset": "node scripts/dev/run.mjs reset",
     "db:seed": "node scripts/dev/run.mjs seed",
     "db:verify-rls": "node scripts/dev/run.mjs verify-rls",
+    "db:verify-ledger": "node scripts/dev/run.mjs verify-ledger",
     "build": "tsc --build",
     "typecheck": "tsc --build --force",
     "test": "vitest run",

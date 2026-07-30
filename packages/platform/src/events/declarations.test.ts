@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { CREDIT_EVENT_TYPES, CREDIT_PRODUCER } from '../credits/events.js';
 import {
   MEMBERSHIP_PRODUCER,
   ORGANIZATION_MEMBERSHIP_EVENT_TYPES,
@@ -17,6 +18,7 @@ import { ORGANIZATION_EVENT_TYPES, ORGANIZATION_PRODUCER } from '../organization
 import { WORKSPACE_SETTINGS_UPDATED } from '../settings/events.js';
 import { WORKSPACE_EVENT_TYPES, WORKSPACE_PRODUCER } from '../workspaces/events.js';
 import {
+  CREDIT_STREAM,
   ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
   ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,
@@ -43,10 +45,22 @@ describe('coverage — every emittable type is declared', () => {
     }
   });
 
-  it('covers all nineteen Sprint 1 event types', () => {
-    expect(PLATFORM_EVENT_DECLARATIONS).toHaveLength(19);
-    expect(PLATFORM_EMITTABLE_EVENT_TYPES).toHaveLength(19);
-    expect(new Set(PLATFORM_EMITTABLE_EVENT_TYPES).size).toBe(19);
+  // Stated as the sum of the families rather than as a literal: a bare number
+  // has to be re-guessed every time a family grows, and the interesting failure
+  // is a family that stopped being covered, not a count that moved.
+  it('covers every family — nineteen from Sprint 1 plus the five ledger types', () => {
+    const expected =
+      ORGANIZATION_EVENT_TYPES.length +
+      ORGANIZATION_MEMBERSHIP_EVENT_TYPES.length +
+      WORKSPACE_EVENT_TYPES.length +
+      WORKSPACE_MEMBERSHIP_EVENT_TYPES.length +
+      1 + // WorkspaceSettingsUpdated
+      CREDIT_EVENT_TYPES.length;
+
+    expect(expected).toBe(24);
+    expect(PLATFORM_EVENT_DECLARATIONS).toHaveLength(expected);
+    expect(PLATFORM_EMITTABLE_EVENT_TYPES).toHaveLength(expected);
+    expect(new Set(PLATFORM_EMITTABLE_EVENT_TYPES).size).toBe(expected);
   });
 
   it('exposes a contribution a composition root can register directly', () => {
@@ -76,6 +90,16 @@ describe('tenant scope — ADR-029, declared per type', () => {
     }
   });
 
+  // Balance resolves per organization, so the credit account is an
+  // organization-owned aggregate. `CreditConsumed` names a workspace in its
+  // PAYLOAD; that is attribution, and a consumer must not rebuild workspace
+  // tenant context from it.
+  it('scopes credit events to the organization despite workspace attribution', () => {
+    for (const eventType of CREDIT_EVENT_TYPES) {
+      expect(byType.get(eventType)?.tenantScope, eventType).toBe('organization');
+    }
+  });
+
   it('leaves no declaration without a scope', () => {
     for (const declaration of PLATFORM_EVENT_DECLARATIONS) {
       expect(['workspace', 'organization'], declaration.eventType).toContain(
@@ -99,6 +123,9 @@ describe('producers and streams', () => {
     ]) {
       expect(byType.get(eventType)?.producer, eventType).toBe(MEMBERSHIP_PRODUCER);
     }
+    for (const eventType of CREDIT_EVENT_TYPES) {
+      expect(byType.get(eventType)?.producer, eventType).toBe(CREDIT_PRODUCER);
+    }
   });
 
   // Ordering is per aggregateId, so splitting a family across streams buys
@@ -113,6 +140,25 @@ describe('producers and streams', () => {
       WORKSPACE_SETTINGS_UPDATED,
     ]) {
       expect(byType.get(eventType)?.stream, eventType).toBe(WORKSPACE_STREAM);
+    }
+  });
+
+  // A `CreditConsumed` per AI call would otherwise set the retention and
+  // consumer lag of every organization lifecycle event to whatever the
+  // highest-volume stream on the platform can sustain.
+  it('keeps the ledger off the organization stream despite sharing its aggregate id', () => {
+    for (const eventType of CREDIT_EVENT_TYPES) {
+      expect(byType.get(eventType)?.stream, eventType).toBe(CREDIT_STREAM);
+    }
+    expect(CREDIT_STREAM).not.toBe(ORGANIZATION_STREAM);
+  });
+
+  // The balance read model and cost monitoring are the declared consumers in
+  // credits.md, and neither exists. Composition refuses to start a group with
+  // no handler, so a group is declared in the increment that supplies one.
+  it('declares no consumer for a ledger event yet', () => {
+    for (const eventType of CREDIT_EVENT_TYPES) {
+      expect(byType.get(eventType)?.consumers, eventType).toEqual([]);
     }
   });
 

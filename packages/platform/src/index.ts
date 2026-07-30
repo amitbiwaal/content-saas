@@ -288,8 +288,70 @@ export type {
 } from './cascade/suspension.js';
 export { createSuspensionCascade, ORGANIZATION_CASCADE_KEY } from './cascade/suspension.js';
 
+// Credit ledger — the immutable model
+export type {
+  LedgerDirection,
+  LedgerEntry,
+  LedgerEntryType,
+  LedgerErrorCode,
+} from './credits/ledger.js';
+export {
+  assertValidAmount,
+  IMPLIED_DIRECTION,
+  isLedgerDirection,
+  isLedgerEntryType,
+  LEDGER_DIRECTIONS,
+  LEDGER_ENTRY_TYPES,
+  LedgerError,
+  resolveDirection,
+} from './credits/ledger.js';
+
+// Credit ledger events — payload contracts and envelope construction
+export type {
+  CreditAdjustedPayload,
+  CreditConsumedPayload,
+  CreditEventContext,
+  CreditEventPayload,
+  CreditEventType,
+  CreditExpiredPayload,
+  CreditGrantedPayload,
+  CreditLedgerEventPayload,
+  CreditRefundedPayload,
+} from './credits/events.js';
+export {
+  CREDIT_ACCOUNT_AGGREGATE,
+  CREDIT_EVENT_TYPES,
+  CREDIT_PRODUCER,
+  creditAdjusted,
+  creditConsumed,
+  creditEventTenantId,
+  creditExpired,
+  creditGranted,
+  creditRefunded,
+} from './credits/events.js';
+
+// Credit Ledger Service — append, read, idempotency lookup. No balance.
+export type {
+  AppendEntryCommand,
+  AppendResult,
+  CreditLedgerService,
+  CreditLedgerServiceOptions,
+  LedgerActor,
+  LedgerCursor,
+  LedgerExecutor,
+  LedgerPage,
+  LedgerPageQuery,
+} from './credits/service.js';
+export {
+  CREDIT_AUDIT_ACTIONS,
+  createCreditLedgerService,
+  DEFAULT_LEDGER_PAGE,
+  MAX_LEDGER_PAGE,
+} from './credits/service.js';
+
 // Event registry declarations — what a composition root registers.
 export {
+  CREDIT_STREAM,
   ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
   ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,

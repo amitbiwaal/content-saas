@@ -27,6 +27,7 @@ const TASKS = {
   reset: 'scripts/db/reset',
   seed: 'scripts/db/seed',
   'verify-rls': 'scripts/db/verify-rls',
+  'verify-ledger': 'scripts/db/verify-ledger',
 };
 
 const task = process.argv[2];
