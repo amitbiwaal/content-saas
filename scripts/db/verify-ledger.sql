@@ -282,8 +282,12 @@ BEGIN
     ) VALUES (ORG, ORG, WS, 'consumption', 0.000001, 'debit',
               'verify-ledger-consumption-1', 'Attributed.', CORR, ACTOR);
 
+    -- gitleaks reads `<something>_key = '<high-entropy string>'` as a credential.
+    -- Allowed per line rather than by exempting the file: a path allowlist here
+    -- would also stop it catching a real secret in this gate later.
     SELECT amount INTO stored
-      FROM credit_ledger_entries WHERE idempotency_key = 'verify-ledger-consumption-1';
+      FROM credit_ledger_entries
+     WHERE idempotency_key = 'verify-ledger-consumption-1';  -- gitleaks:allow
     IF stored = 0.000001 THEN
       results := results || format(REPORT, 'PASS', 'ledger-consumption-accepted',
         'a workspace-attributed consumption round-trips at NUMERIC(20,6) resolution.');
