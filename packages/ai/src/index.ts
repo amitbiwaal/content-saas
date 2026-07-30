@@ -11,8 +11,9 @@
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
  * pipeline, S2.4 the workflow runtime, S2.5 usage metering, S2.6 retry and
- * recovery, S2.7 streaming, S2.8 the first real adapters. Still no routing and
- * no gateway — and nothing bills for a call.
+ * recovery, S2.7 streaming, S2.8 the first real adapters, S3.1 the Gateway's
+ * admission pipeline. Still no routing — and nothing executes a provider or
+ * bills for a call.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -427,3 +428,43 @@ export {
   GOOGLE_PROVIDER_ID,
   toGoogleRequest,
 } from './providers/google.js';
+
+// The AI Gateway — `08-ai-platform/ai-gateway.md`, ADR-008.
+// The single governed entry point. It validates, authorizes, normalizes and
+// prepares; it never executes.
+export type {
+  AdmissionResult,
+  AdmissionStage,
+  GatewayContext,
+  GatewayDecision,
+  GatewayRequest,
+  GatewayResponse,
+  RejectionCode,
+} from './gateway/contracts.js';
+export {
+  ADMISSION_STAGES,
+  isRejectionCode,
+  MAX_VARIABLES_BYTES,
+  REJECTION_CODES,
+} from './gateway/contracts.js';
+
+export type {
+  AdmissionDirectory,
+  AdmissionFlags,
+  AdmissionMembership,
+  AdmissionMembershipStatus,
+  AdmissionOrganization,
+  AdmissionOrganizationStatus,
+  AdmissionWorkspace,
+  AdmissionWorkspaceStatus,
+} from './gateway/ports.js';
+export {
+  ADMISSION_MEMBERSHIP_STATUSES,
+  ADMISSION_ORGANIZATION_STATUSES,
+  ADMISSION_WORKSPACE_STATUSES,
+  ADMITTING_ORGANIZATION_STATUS,
+  ADMITTING_WORKSPACE_STATUS,
+} from './gateway/ports.js';
+
+export type { Gateway, GatewayOptions } from './gateway/admission.js';
+export { createGateway, PIPELINE_ORDER } from './gateway/admission.js';
