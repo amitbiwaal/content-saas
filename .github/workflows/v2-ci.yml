@@ -424,6 +424,14 @@ jobs:
           fetch-depth: 0 # history, not just the working tree
       - uses: gitleaks/gitleaks-action@v2
         env:
+          # The action decides whether a licence is required by looking up the
+          # repository owner's account type — individual accounts are exempt.
+          # Unauthenticated that call shares an IP rate limit with every other
+          # runner, and when it is exhausted the action does not skip the check,
+          # it ENFORCES it: run 30555497594 failed with "missing gitleaks
+          # license" having scanned nothing at all. Authenticated, the lookup
+          # has its own budget, so the gate fails on secrets and nothing else.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: 'false'
 
   licences:
