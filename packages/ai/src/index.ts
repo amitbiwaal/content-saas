@@ -10,8 +10,9 @@
  * (`07-development-guide/project-structure.md` rule 4).
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
- * pipeline, S2.4 the workflow runtime, S2.5 usage metering. Still no adapter,
- * no routing, and nothing that calls a model — or bills for one.
+ * pipeline, S2.4 the workflow runtime, S2.5 usage metering, S2.6 retry and
+ * recovery. Still no adapter, no routing, and nothing that calls a model — or
+ * bills for one.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -268,3 +269,48 @@ export {
   USAGE_ERROR_CODES,
   UsageError,
 } from './usage/recorder.js';
+
+// Retry and recovery — `08-ai-platform/retry-strategy.md`.
+// It decides whether and when; it never dispatches. NOT the event platform's
+// retry engine, which decides whether an EVENT is redelivered.
+export type { BackoffStrategy, RetryPolicy } from './retry/policy.js';
+export {
+  assertRetryPolicyValid,
+  attemptsAllowed,
+  BACKOFF_STRATEGIES,
+  backoffFor,
+  backoffSchedule,
+  DEFAULT_RETRY_POLICY,
+  isBackoffStrategy,
+  RetryPolicyError,
+} from './retry/policy.js';
+
+export type {
+  DecideOptions,
+  RetryAction,
+  RetryAttempt,
+  RetryDecision,
+  RetryErrorCode,
+  RetryReason,
+  RetryState,
+  RetryStatus,
+} from './retry/engine.js';
+export {
+  beginRetryState,
+  decideRetry,
+  isRetryError,
+  isRetryStatus,
+  isTerminalRetryStatus,
+  nextAttemptNumber,
+  recordFailure,
+  recordSuccess,
+  RETRY_ERROR_CODES,
+  RETRY_REASONS,
+  RETRY_STATUSES,
+  RetryError,
+  settle,
+  TERMINAL_RETRY_STATUSES,
+} from './retry/engine.js';
+
+export type { RecoverOptions, RecoveryAction, RecoveryResult } from './retry/recovery.js';
+export { isRecoveryAction, recover, RECOVERY_ACTIONS, sameRecovery } from './retry/recovery.js';
