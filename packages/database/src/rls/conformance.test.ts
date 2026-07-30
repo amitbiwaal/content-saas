@@ -35,13 +35,26 @@ function canonicalPolicy(name: string, over: Partial<Policy> = {}): Policy {
 }
 
 /** Synthetic catalog. Exercises the suite's logic without a live database. */
+interface Privilege {
+  table_name: string;
+  can_select: boolean;
+  can_insert: boolean;
+  can_update: boolean;
+  can_delete: boolean;
+}
+
+/** Synthetic catalog. Exercises the suite's logic without a live database. */
 function db(opts: {
   tables?: Table[];
   policies?: Policy[];
   roles?: { rolname: string; rolbypassrls: boolean }[];
   owners?: { table_name: string; owner: string }[];
+  columns?: { table_name: string; column_name: string }[];
+  privileges?: Privilege[];
+  /** Omit the identity exceptions, to prove their ABSENCE is a failure. */
+  omitIdentity?: boolean;
 }): SqlExecutor {
-  const exceptions = IDENTITY_EXCEPTION_TABLES.map((t) => ({
+  const exceptions = (opts.omitIdentity ? [] : IDENTITY_EXCEPTION_TABLES).map((t) => ({
     table_name: t,
     rls_enabled: false,
     rls_forced: false,
@@ -57,6 +70,10 @@ function db(opts: {
           (opts.roles ?? [{ rolname: 'contentos_app', rolbypassrls: false }]) as unknown as T[],
         );
       }
+      if (sql.includes('information_schema.columns'))
+        return Promise.resolve((opts.columns ?? []) as unknown as T[]);
+      if (sql.includes('has_table_privilege'))
+        return Promise.resolve((opts.privileges ?? []) as unknown as T[]);
       return Promise.resolve(
         (opts.owners ?? [
           { table_name: 'workspaces', owner: 'contentos_migrator' },
@@ -267,7 +284,11 @@ describe('RLS conformance — reporting', () => {
     expect(report.findings.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('does not flag exception tables that a later migration has not created yet', async () => {
+  // Superseded deliberately. This used to tolerate an absent identity table on
+  // the grounds that a later migration might create it — but all five come from
+  // migration 0003 and the gate runs after every migration, so an absent one is
+  // a REMOVAL. "No removals" is half of "exactly five".
+  it('FAILS when an identity table is absent from the database', async () => {
     const executor: SqlExecutor = {
       query<T>(sql: string): Promise<readonly T[]> {
         if (sql.includes('relrowsecurity')) {
@@ -284,6 +305,7 @@ describe('RLS conformance — reporting', () => {
       },
     };
     const report = await runRlsConformance(executor);
-    expect(report.passed).toBe(true);
+    expect(report.passed).toBe(false);
+    expect(report.findings.map((f) => f.check)).toContain('identity-class-exact');
   });
 });

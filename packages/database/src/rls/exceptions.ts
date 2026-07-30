@@ -1,14 +1,22 @@
 /**
- * The closed RLS exception sets.
+ * The closed RLS exception sets — DERIVED, never restated.
  *
  * Spec: `16-security/row-level-security.md` §"The exception set — exactly five
- * tables", and `03-database/tables.md` §2.
+ * tables", `03-database/tables.md` §2, and ADR-025 for the second class.
  *
- * This module is the single source the conformance suite checks the live
- * database against. Changing it is how a sixth exception would be introduced,
- * which is exactly why it is small, explicit, and carries the justification
- * inline.
+ * Everything here is computed from `./manifest.ts`, which is the one
+ * authoritative source. This module used to hold its own copies of the table
+ * names and their justifications; two lists of the same thing is exactly how a
+ * table gets added to one and not the other, and the coverage gate is only
+ * meaningful if there is nothing to disagree with.
  */
+
+import {
+  exceptionsOfClass,
+  exceptionTables,
+  RLS_EXCEPTION_MANIFEST,
+  type RlsExceptionEntry,
+} from './manifest.js';
 
 /**
  * The identity exception class — EXACTLY FIVE tables, closed.
@@ -19,48 +27,30 @@
  *
  * A sixth requires an ADR.
  */
-export const IDENTITY_EXCEPTION_TABLES = [
-  'users',
-  'organizations',
-  'organization_memberships',
-  'verified_domains',
-  'sso_configurations',
-] as const;
-
-export type IdentityExceptionTable = (typeof IDENTITY_EXCEPTION_TABLES)[number];
-
-export const EXCEPTION_JUSTIFICATIONS: Readonly<Record<IdentityExceptionTable, string>> = {
-  users: 'One person belongs to many organizations; identity spans tenants.',
-  organizations: 'The organization contains workspaces; it is above the boundary.',
-  organization_memberships:
-    'Resolves which tenants a subject may reach — consulted before tenant context exists.',
-  verified_domains: 'Domain ownership is organization-level and consulted at login, pre-tenant.',
-  sso_configurations: 'SSO is resolved from the email domain before any workspace is known.',
-};
+export const IDENTITY_EXCEPTION_TABLES: readonly string[] = exceptionsOfClass('identity').map(
+  (e) => e.table,
+);
 
 /**
- * The reference-data exception class proposed by **ADR-025**.
+ * The reference-data exception class — ADR-025, ACCEPTED.
  *
- * DELIBERATELY EMPTY.
- *
- * `16-security/row-level-security.md` states the approved position plainly:
- * ADR-025 "is not accepted, so **no such table exists today**, and any
- * reference data must currently carry `tenant_id` like everything else."
- *
- * The constant exists so the second allowlist category is present and testable
- * the day ADR-025 is accepted, and so its emptiness is asserted rather than
- * assumed. None of ADR-025's candidate tables (`plans`, `settings_registry`,
- * `permission_catalogue`, `role_permissions`, `flags`, `flag_rules`) is part of
- * the Sprint 0 schema — they are Phase 5 / `04-platform/`, so this class is not
- * on the critical path until Sprint 1.
+ * Currently empty, and verification passes with it empty. Membership requires
+ * all four criteria: seeded by migration, identical for every customer, no
+ * customer data, and read-only to the application role. The last is checked
+ * mechanically rather than asserted in review, which is what makes this class
+ * safer than the identity one rather than a relaxation of it.
  */
-export const REFERENCE_DATA_EXCEPTION_TABLES: readonly string[] = [];
+export const REFERENCE_DATA_EXCEPTION_TABLES: readonly string[] = exceptionsOfClass(
+  'reference-data',
+).map((e) => e.table);
 
 /** Every table permitted to lack RLS, across both classes. */
-export const ALL_EXCEPTION_TABLES: readonly string[] = [
-  ...IDENTITY_EXCEPTION_TABLES,
-  ...REFERENCE_DATA_EXCEPTION_TABLES,
-];
+export const ALL_EXCEPTION_TABLES: readonly string[] = exceptionTables();
+
+/** The written reason for every exception, keyed by table. */
+export const EXCEPTION_JUSTIFICATIONS: Readonly<Record<string, string>> = Object.fromEntries(
+  RLS_EXCEPTION_MANIFEST.map((e: RlsExceptionEntry) => [e.table, e.justification]),
+);
 
 /**
  * Tables whose policy deviates from the canonical shape, with the approved

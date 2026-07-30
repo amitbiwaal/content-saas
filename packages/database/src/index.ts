@@ -10,7 +10,25 @@
  */
 
 // RLS — the closed exception sets and the conformance suite
-export type { ExceptionTableAccess, IdentityExceptionTable } from './rls/exceptions.js';
+export type { ExceptionTableAccess } from './rls/exceptions.js';
+
+// THE manifest — the single authoritative source for every RLS exception.
+export type {
+  RlsAssertionSpec,
+  RlsAssertionSurface,
+  RlsExceptionClass,
+  RlsExceptionEntry,
+  RlsManifestDocument,
+} from './rls/manifest.js';
+export {
+  assertionsOfSurface,
+  exceptionEntry,
+  exceptionsOfClass,
+  exceptionTables,
+  RLS_ASSERTIONS,
+  RLS_EXCEPTION_MANIFEST,
+  rlsManifestDocument,
+} from './rls/manifest.js';
 export {
   ALL_EXCEPTION_TABLES,
   APPROVED_POLICY_VARIANTS,
@@ -19,11 +37,19 @@ export {
   isExceptionTable,
   REFERENCE_DATA_EXCEPTION_TABLES,
 } from './rls/exceptions.js';
-export type { ConformanceFinding, ConformanceReport, SqlExecutor } from './rls/conformance.js';
+export type {
+  ConformanceFinding,
+  ConformanceReport,
+  RlsAssertionResult,
+  RlsAssertionStatus,
+  SqlExecutor,
+} from './rls/conformance.js';
 export {
   assertRlsConformance,
+  COLUMNS_SQL,
   OWNERS_SQL,
   POLICIES_SQL,
+  PRIVILEGES_SQL,
   ROLES_SQL,
   runRlsConformance,
   TABLES_SQL,

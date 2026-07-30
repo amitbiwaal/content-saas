@@ -1,0 +1,131 @@
+{
+  "exceptions": [
+    {
+      "table": "users",
+      "class": "identity",
+      "justification": "One person belongs to many organizations; identity spans tenants."
+    },
+    {
+      "table": "organizations",
+      "class": "identity",
+      "justification": "The organization contains workspaces; it is above the boundary."
+    },
+    {
+      "table": "organization_memberships",
+      "class": "identity",
+      "justification": "Resolves which tenants a subject may reach — consulted before tenant context exists."
+    },
+    {
+      "table": "verified_domains",
+      "class": "identity",
+      "justification": "Domain ownership is organization-level and consulted at login, pre-tenant."
+    },
+    {
+      "table": "sso_configurations",
+      "class": "identity",
+      "justification": "SSO is resolved from the email domain before any workspace is known."
+    }
+  ],
+  "assertions": [
+    {
+      "name": "exception-set-closed",
+      "surface": "catalog",
+      "description": "Every table without RLS appears in the manifest."
+    },
+    {
+      "name": "exception-set-complete",
+      "surface": "catalog",
+      "description": "Every manifest table that exists has RLS disabled."
+    },
+    {
+      "name": "identity-class-exact",
+      "surface": "catalog",
+      "description": "The identity class is exactly its five named tables — no additions, no removals."
+    },
+    {
+      "name": "exception-justified",
+      "surface": "catalog",
+      "description": "Every manifest entry carries a written justification."
+    },
+    {
+      "name": "reference-data-no-tenant-id",
+      "surface": "catalog",
+      "description": "No reference-data table has a tenant_id column; one that does should be tenant-scoped instead."
+    },
+    {
+      "name": "reference-data-readable",
+      "surface": "catalog",
+      "description": "contentos_app holds SELECT on every reference-data table."
+    },
+    {
+      "name": "reference-data-read-only",
+      "surface": "catalog",
+      "description": "contentos_app holds no INSERT, UPDATE or DELETE on any reference-data table — isolation by privilege, not by review."
+    },
+    {
+      "name": "rls-enabled",
+      "surface": "catalog",
+      "description": "Every non-exception table has RLS enabled."
+    },
+    {
+      "name": "rls-forced",
+      "surface": "catalog",
+      "description": "Every RLS table is also FORCEd, so the table owner cannot bypass it."
+    },
+    {
+      "name": "policy-present",
+      "surface": "catalog",
+      "description": "Every RLS-enabled table carries at least one policy."
+    },
+    {
+      "name": "policy-for-all",
+      "surface": "catalog",
+      "description": "Every RLS-enabled table carries a FOR ALL policy."
+    },
+    {
+      "name": "policy-with-check",
+      "surface": "catalog",
+      "description": "Every FOR ALL policy carries WITH CHECK — its absence permits a cross-tenant write."
+    },
+    {
+      "name": "policy-canonical",
+      "surface": "catalog",
+      "description": "Every policy keys on current_setting(app.tenant_id), except approved variants."
+    },
+    {
+      "name": "role-exists",
+      "surface": "catalog",
+      "description": "contentos_app exists."
+    },
+    {
+      "name": "app-no-bypassrls",
+      "surface": "catalog",
+      "description": "contentos_app does not hold BYPASSRLS."
+    },
+    {
+      "name": "app-owns-no-tables",
+      "surface": "catalog",
+      "description": "contentos_app owns no table; an owner bypasses RLS unless FORCE is set."
+    },
+    {
+      "name": "no-context-zero-rows",
+      "surface": "behavioural",
+      "description": "With no tenant context set, a tenant-scoped read returns zero rows."
+    },
+    {
+      "name": "cross-tenant-read-blocked",
+      "surface": "behavioural",
+      "description": "Under tenant B's context, tenant A's rows are invisible."
+    },
+    {
+      "name": "own-tenant-read-permitted",
+      "surface": "behavioural",
+      "description": "The positive control — the role CAN read its own tenant, without which the isolation checks prove nothing."
+    },
+    {
+      "name": "cross-tenant-write-rejected",
+      "surface": "behavioural",
+      "description": "WITH CHECK rejects a write carrying another tenant id."
+    }
+  ]
+}
