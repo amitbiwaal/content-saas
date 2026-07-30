@@ -141,7 +141,12 @@ BEGIN
   ) VALUES (ORG, ORG, 'billing.credits_low', '{}'::jsonb, 'verify-notifications-1', CORR)
   ON CONFLICT (tenant_id, dedupe_key) DO NOTHING;
 
-  SELECT count(*) INTO seen FROM notifications WHERE dedupe_key = 'verify-notifications-1';
+  -- gitleaks reads `<something>_key = '<distinctive string>'` as a credential.
+  -- Allowed per line rather than by exempting the file: a path allowlist would
+  -- also stop it catching a real secret in this gate later.
+  SELECT count(*) INTO seen
+    FROM notifications
+   WHERE dedupe_key = 'verify-notifications-1';  -- gitleaks:allow
   IF seen = 1 THEN
     results := results || format(REPORT, 'PASS', 'notifications-dedupe-converges',
       'ON CONFLICT DO NOTHING leaves exactly one notification.');

@@ -282,7 +282,10 @@ describe('payload projection carries identifiers, never values', () => {
       scopeType: 'workspace',
       scopeId: 'ws-1',
       changedKeys: ['content.locale'],
-      secretlyAdded: 'competitively-sensitive-7731',
+      // gitleaks reads a distinctive string on an unrecognised key as a
+      // credential. Allowed per line rather than by exempting the file, so it
+      // keeps scanning this suite for a real one.
+      secretlyAdded: 'competitively-sensitive-7731', // gitleaks:allow
     });
     expect(JSON.stringify(projected)).not.toContain('competitively-sensitive-7731');
   });
