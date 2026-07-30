@@ -96,21 +96,31 @@ const SELECT_STALE_SQL = `
             OR (created_at, id) > ($2::timestamptz, $3::uuid))
   ) AS stale`;
 
-/** The rebuild source. Exact: PostgreSQL sums NUMERIC without loss. */
+/**
+ * The rebuild source, WITH the watermark it was computed through.
+ *
+ * Exact: PostgreSQL sums NUMERIC without loss.
+ *
+ * The count and the watermark come from ONE statement on purpose. Read
+ * separately they get separate snapshots under READ COMMITTED, and an entry
+ * landing between them yields `entries = 0` alongside a non-null watermark —
+ * which `ck_credit_balances__watermark_matches_count` rejects, failing a
+ * projection for a reason that has nothing to do with the balance. A scalar
+ * subquery shares the enclosing statement's snapshot, so the pair is always
+ * consistent.
+ */
 const AGGREGATE_LEDGER_SQL = `
   SELECT COALESCE(SUM(amount) FILTER (WHERE direction = 'credit'), 0)::text AS credited,
          COALESCE(SUM(amount) FILTER (WHERE direction = 'debit'), 0)::text  AS debited,
-         count(*)::int                                                      AS entries
+         count(*)::int                                                      AS entries,
+         max(created_at)                                                    AS "throughAt",
+         (SELECT last.id
+            FROM credit_ledger_entries last
+           WHERE last.tenant_id = $1
+           ORDER BY last.created_at DESC, last.id DESC
+           LIMIT 1)                                                         AS "throughId"
     FROM credit_ledger_entries
    WHERE tenant_id = $1`;
-
-/** The watermark the aggregate above was computed through. */
-const SELECT_LAST_ENTRY_SQL = `
-  SELECT created_at AS "throughAt", id AS "throughId"
-    FROM credit_ledger_entries
-   WHERE tenant_id = $1
-   ORDER BY created_at DESC, id DESC
-   LIMIT 1`;
 
 /**
  * The UNSPENT portion of open holds — `amount - consumed`, not `amount`.
@@ -161,6 +171,8 @@ interface AggregateRow {
   readonly credited: string;
   readonly debited: string;
   readonly entries: number;
+  readonly throughAt: string | Date | null;
+  readonly throughId: string | null;
 }
 
 const iso = (value: string | Date | null): string | null =>
@@ -274,19 +286,13 @@ export async function projectBalance(
   const debited = sumOrZero(aggregate?.debited);
   const entries = aggregate?.entries ?? 0;
 
-  const watermarks = await tx.query<{ throughAt: string | Date | null; throughId: string | null }>(
-    SELECT_LAST_ENTRY_SQL,
-    [organizationId],
-  );
-  const watermark = watermarks[0];
-
   const upserted = await tx.query<{ thresholdState: string }>(UPSERT_PROJECTION_SQL, [
     organizationId,
     formatAmount(credited),
     formatAmount(debited),
     entries,
-    watermark === undefined ? null : iso(watermark.throughAt),
-    watermark?.throughId ?? null,
+    aggregate === undefined ? null : iso(aggregate.throughAt),
+    aggregate?.throughId ?? null,
   ]);
 
   // The row's state BEFORE this call: ON CONFLICT DO UPDATE leaves

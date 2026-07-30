@@ -23,6 +23,10 @@ DECLARE
   ACTOR CONSTANT UUID := '018f7a1e-0000-7000-8000-000000000001';
   CORR  CONSTANT UUID := '018f7a1e-0000-7000-8000-00000000c0bb';
   FUTURE CONSTANT TIMESTAMPTZ := now() + interval '1 day';
+  -- Stands in for a ledger entry id. Never dereferenced: the watermark is a
+  -- position, and the column carries no foreign key precisely so the ledger can
+  -- be pruned without invalidating every projection.
+  WATERMARK CONSTANT UUID := '018f7a1e-0000-7000-7002-00000000000f';
 
   REPORT CONSTANT TEXT := '    %-4s %-40s %s';
 
@@ -219,11 +223,40 @@ BEGIN
   END IF;
 
   -- ── 10 · the balance read model ───────────────────────────────────────────
-  INSERT INTO credit_balances (tenant_id, organization_id, credited, debited, entries_projected)
-  VALUES (ORG, ORG, 100, 25, 2)
-  ON CONFLICT (tenant_id) DO UPDATE SET credited = 100, debited = 25, entries_projected = 2;
-  results := results || format(REPORT, 'PASS', 'balances-upsert-permitted',
-    'the projection can be written and re-written.');
+  -- A non-zero count REQUIRES a watermark: a projection that claims to have
+  -- read entries but cannot say which ones is not resumable, and would
+  -- re-aggregate the whole ledger on every request.
+  --
+  -- Asserted FIRST, under this tenant and before any row exists, so RLS cannot
+  -- reach it before the constraint does. Written the other way round the block
+  -- passes on a WITH CHECK rejection and never exercises the constraint at all.
+  BEGIN
+    INSERT INTO credit_balances (
+      tenant_id, organization_id, credited, debited, entries_projected)
+    VALUES (ORG, ORG, 1, 0, 2);
+    failures := failures + 1;
+    results := results || format(REPORT, 'FAIL', 'balances-count-needs-watermark',
+      'a projection claiming 2 entries was accepted with no watermark.');
+  EXCEPTION WHEN check_violation THEN
+    results := results || format(REPORT, 'PASS', 'balances-count-needs-watermark',
+      'a non-zero entry count requires the watermark it was computed through.');
+  END;
+
+  BEGIN
+    INSERT INTO credit_balances (
+      tenant_id, organization_id, credited, debited, entries_projected,
+      projected_through_at, projected_through_id)
+    VALUES (ORG, ORG, 100, 25, 2, now(), WATERMARK)
+    ON CONFLICT (tenant_id) DO UPDATE
+       SET credited = 100, debited = 25, entries_projected = 2,
+           projected_through_at = now(), projected_through_id = WATERMARK;
+    results := results || format(REPORT, 'PASS', 'balances-upsert-permitted',
+      'the projection can be written and re-written.');
+  EXCEPTION WHEN OTHERS THEN
+    failures := failures + 1;
+    results := results || format(REPORT, 'FAIL', 'balances-upsert-permitted',
+      'a valid projection was rejected: ' || SQLERRM);
+  END;
 
   BEGIN
     UPDATE credit_balances SET threshold_state = 'nearly' WHERE tenant_id = ORG;
@@ -241,6 +274,8 @@ BEGIN
     UPDATE credit_balances
        SET projected_through_at = now(), projected_through_id = NULL
      WHERE tenant_id = ORG;
+    -- Unreachable: the statement above must have raised.
+    NULL;
     failures := failures + 1;
     results := results || format(REPORT, 'FAIL', 'balances-watermark-complete',
       'half a watermark was accepted.');

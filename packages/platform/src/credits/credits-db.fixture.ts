@@ -353,6 +353,12 @@ export function createCreditsDb(options: CreditsDbOptions = {}): CreditsDb {
         if (sql.includes("FILTER (WHERE direction = 'credit')")) {
           calls.push('aggregate-ledger');
           const mine = entries.filter((e) => e.tenantId === tenant);
+          // The watermark comes back with the sums, from one snapshot — the
+          // production query reads them in a single statement for exactly that
+          // reason, so the fake must not hand them out separately either.
+          const last = [...mine].sort((a, b) =>
+            (b.createdAt + b.id).localeCompare(a.createdAt + a.id),
+          )[0];
           return [
             {
               credited: formatAmount(
@@ -362,6 +368,8 @@ export function createCreditsDb(options: CreditsDbOptions = {}): CreditsDb {
                 sumScaled(mine.filter((e) => e.direction === 'debit').map((e) => e.amount)),
               ),
               entries: mine.length,
+              throughAt: last?.createdAt ?? null,
+              throughId: last?.id ?? null,
             },
           ] as unknown as T[];
         }

@@ -48,7 +48,36 @@ cleanup() {
 }
 trap cleanup EXIT
 
-app_query() { psql -v ON_ERROR_STOP=1 -tA "$APP_URL" -c "$1" | tr -d '[:space:]'; }
+# `set -e` would abort the whole gate on a non-zero `wait` — before a single
+# assertion ran, and with no diagnosis. Losing a race is a NORMAL outcome here;
+# most callers are meant to lose. Worker failures are therefore counted and
+# reported, and the invariants below are what decide the result.
+#
+# `{i}` in any argument is replaced with the worker index. Substituting here
+# rather than in SQL because psql does NOT interpolate variables inside variable
+# VALUES — `-v run="race-:i"` would hand all twelve backends the same run id,
+# and a race for one id is a different test from a race for twelve.
+race() {
+  local script="$1"
+  local n="$2"
+  shift 2
+  local pids=()
+  local broken=0
+  local args=()
+  local arg
+  for i in $(seq 1 "$n"); do
+    args=()
+    for arg in "$@"; do args+=("${arg//\{i\}/$i}"); done
+    psql -q "$APP_URL" "${args[@]}" -f "$script" >/dev/null 2>&1 &
+    pids+=("$!")
+  done
+  for pid in "${pids[@]}"; do
+    if ! wait "$pid"; then broken=$((broken + 1)); fi
+  done
+  if [ "$broken" -ne 0 ]; then
+    note NOTE "race-worker-errors" "${broken}/${n} backends exited non-zero; losing a race is not one of these."
+  fi
+}
 
 # `SET LOCAL` needs the statement in the same transaction as the query.
 scoped_query() {
@@ -76,12 +105,8 @@ fi
 
 # ── Race 1 · parallel authorization cannot over-reserve ─────────────────────
 # Twelve runs each want 20 against a balance of 100. At most five may succeed.
-for i in $(seq 1 "$WORKERS"); do
-  psql -q "$APP_URL" \
-    -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=20 -v run="race-auth-${i}" \
-    -f scripts/db/credits/race-authorize.sql >/dev/null 2>&1 &
-done
-wait
+race scripts/db/credits/race-authorize.sql "$WORKERS" \
+  -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=20 -v run="race-auth-{i}"
 
 reserved="$(scoped_query "SELECT COALESCE(SUM(amount - consumed),0)::text FROM credit_holds WHERE tenant_id='${ORG}' AND state='held'")"
 held_count="$(scoped_query "SELECT count(*) FROM credit_holds WHERE tenant_id='${ORG}' AND state='held'")"
@@ -101,12 +126,8 @@ else
 fi
 
 # ── Race 2 · one run id reserves once ───────────────────────────────────────
-for i in $(seq 1 "$WORKERS"); do
-  psql -q "$APP_URL" \
-    -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=0 -v run="race-single-run" \
-    -f scripts/db/credits/race-authorize.sql >/dev/null 2>&1 &
-done
-wait
+race scripts/db/credits/race-authorize.sql "$WORKERS" \
+  -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=0 -v run="race-single-run"
 
 singles="$(scoped_query "SELECT count(*) FROM credit_holds WHERE tenant_id='${ORG}' AND run_id='race-single-run'")"
 if [ "$singles" = "1" ]; then
@@ -133,13 +154,9 @@ HOLD="$(psql -v ON_ERROR_STOP=1 -tA "$APP_URL" \
   -c "BEGIN; SET LOCAL app.tenant_id = '${ORG}'; SELECT id FROM credit_holds WHERE run_id='race-consume'; COMMIT;" \
   | grep -Ei '^[0-9a-f-]{36}$' | head -1)"
 
-for _ in $(seq 1 "$WORKERS"); do
-  psql -q "$APP_URL" \
-    -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=10 \
-    -v hold="$HOLD" -v key="race-consume:step-1" \
-    -f scripts/db/credits/race-consume.sql >/dev/null 2>&1 &
-done
-wait
+race scripts/db/credits/race-consume.sql "$WORKERS" \
+  -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=10 \
+  -v hold="$HOLD" -v key="race-consume:step-1"
 
 charges="$(scoped_query "SELECT count(*) FROM credit_ledger_entries WHERE tenant_id='${ORG}' AND idempotency_key='race-consume:step-1'")"
 consumed="$(scoped_query "SELECT consumed::text FROM credit_holds WHERE run_id='race-consume'")"
@@ -157,13 +174,9 @@ else
 fi
 
 # ── Race 4 · distinct concurrent charges stay inside the reservation ────────
-for i in $(seq 1 "$WORKERS"); do
-  psql -q "$APP_URL" \
-    -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=10 \
-    -v hold="$HOLD" -v key="race-consume:distinct-${i}" \
-    -f scripts/db/credits/race-consume.sql >/dev/null 2>&1 &
-done
-wait
+race scripts/db/credits/race-consume.sql "$WORKERS" \
+  -v org="$ORG" -v ws="$WS" -v corr="$CORR" -v amount=10 \
+  -v hold="$HOLD" -v key="race-consume:distinct-{i}"
 
 final="$(scoped_query "SELECT consumed::text FROM credit_holds WHERE run_id='race-consume'")"
 within="$(scoped_query "SELECT CASE WHEN consumed <= amount THEN 1 ELSE 0 END FROM credit_holds WHERE run_id='race-consume'")"
