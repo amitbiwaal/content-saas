@@ -58,6 +58,15 @@ importers:
         specifier: 19.0.3
         version: 19.0.3(@types/react@19.0.7)
 
+  packages/ai:
+    dependencies:
+      '@contentos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@contentos/security':
+        specifier: workspace:*
+        version: link:../security
+
   packages/contracts: {}
 
   packages/database: {}
@@ -89,6 +98,9 @@ importers:
 
   services/api:
     dependencies:
+      '@contentos/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@contentos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -104,6 +116,9 @@ importers:
 
   workers/host:
     dependencies:
+      '@contentos/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@contentos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts

@@ -10,6 +10,7 @@
       "@contentos/contracts": ["./packages/contracts/src/index.ts"],
       "@contentos/events": ["./packages/events/src/index.ts"],
       "@contentos/observability": ["./packages/observability/src/index.ts"],
+      "@contentos/ai": ["./packages/ai/src/index.ts"],
       "@contentos/platform": ["./packages/platform/src/index.ts"]
     }
   },
@@ -24,6 +25,9 @@
     },
     {
       "path": "../../packages/observability"
+    },
+    {
+      "path": "../../packages/ai"
     },
     {
       "path": "../../packages/platform"

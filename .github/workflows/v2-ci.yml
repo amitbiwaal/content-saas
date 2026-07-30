@@ -307,6 +307,19 @@ jobs:
             exit 1
           fi
 
+      # A job's lifecycle is enforced by CHECK constraints and by the current
+      # state sitting in every transition's predicate. An UPDATE that matched
+      # nothing looks exactly like one that moved a row until the server reports
+      # the count — which is the difference between a job started once and a job
+      # started twice.
+      - name: 5g · job lifecycle verification against real PostgreSQL
+        run: |
+          mkdir -p ci-logs
+          if ! bash scripts/db/verify-jobs.sh 2>&1 | tee ci-logs/jobs-verification.log; then
+            echo "::error title=Job lifecycle verification failed::$(tail -30 ci-logs/jobs-verification.log | paste -sd'~' -)"
+            exit 1
+          fi
+
       - name: 7 · full test suite (with real DATABASE_URL)
         run: pnpm test -- --coverage --reporter=default --reporter=junit --outputFile.junit=ci-logs/junit.xml
 
@@ -380,6 +393,14 @@ jobs:
         with:
           name: notifications-verification-logs
           path: ci-logs/notifications-verification.log
+          if-no-files-found: warn
+
+      - name: upload job verification logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jobs-verification-logs
+          path: ci-logs/jobs-verification.log
           if-no-files-found: warn
 
       - name: upload service logs

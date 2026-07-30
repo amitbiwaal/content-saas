@@ -16,6 +16,7 @@
  */
 
 import { composeEventRegistry, type ComposedRegistry } from '@contentos/events';
+import { AI_REGISTRY_CONTRIBUTION } from '@contentos/ai';
 import { PLATFORM_REGISTRY_CONTRIBUTION } from '@contentos/platform';
 
 /**
@@ -24,7 +25,10 @@ import { PLATFORM_REGISTRY_CONTRIBUTION } from '@contentos/platform';
  * Adding a producing package means adding its contribution here — one line,
  * in one place, checked at startup.
  */
-export const API_REGISTRY_CONTRIBUTIONS = [PLATFORM_REGISTRY_CONTRIBUTION];
+export const API_REGISTRY_CONTRIBUTIONS = [
+  PLATFORM_REGISTRY_CONTRIBUTION,
+  AI_REGISTRY_CONTRIBUTION,
+];
 
 /**
  * Build the registry, or throw and refuse to start.

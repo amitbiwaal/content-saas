@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["node"],
+    "baseUrl": "../..",
+    "paths": {
+      "@contentos/contracts": ["./packages/contracts/src/index.ts"],
+      "@contentos/security": ["./packages/security/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.fixture.ts", "dist"],
+  "references": [{ "path": "../contracts" }, { "path": "../security" }]
+}

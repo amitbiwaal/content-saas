@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { DomainEvent, TenantContext } from '@contentos/contracts';
 import type { GuardExecutor, RegisteredHandler } from '@contentos/events';
+import { AI_EMITTABLE_EVENT_TYPES } from '@contentos/ai';
 import { PLATFORM_EMITTABLE_EVENT_TYPES } from '@contentos/platform';
 
 import { createWorkerEventRegistry, WORKER_REGISTRY_CONTRIBUTIONS } from './registry.js';
@@ -34,13 +35,22 @@ describe('the worker event registry', () => {
   it('composes with no handlers — the relay-only deployment', () => {
     expect(() => createWorkerEventRegistry()).not.toThrow();
     expect(createWorkerEventRegistry().declarations).toHaveLength(
-      PLATFORM_EMITTABLE_EVENT_TYPES.length,
+      PLATFORM_EMITTABLE_EVENT_TYPES.length + AI_EMITTABLE_EVENT_TYPES.length,
     );
   });
 
   it('registers every platform event type', () => {
     const { registry } = createWorkerEventRegistry();
     for (const eventType of PLATFORM_EMITTABLE_EVENT_TYPES) {
+      expect(registry.isRegistered(eventType, 1), eventType).toBe(true);
+    }
+  });
+
+  // The relay publishes what any package emits, so a type declared by only one
+  // contribution is one the relay would reject at the boundary.
+  it('registers every AI event type', () => {
+    const { registry } = createWorkerEventRegistry();
+    for (const eventType of AI_EMITTABLE_EVENT_TYPES) {
       expect(registry.isRegistered(eventType, 1), eventType).toBe(true);
     }
   });
@@ -73,6 +83,9 @@ describe('the worker event registry', () => {
   });
 
   it('names its contributions in one place', () => {
-    expect(WORKER_REGISTRY_CONTRIBUTIONS.map((c) => c.source)).toEqual(['@contentos/platform']);
+    expect(WORKER_REGISTRY_CONTRIBUTIONS.map((c) => c.source)).toEqual([
+      '@contentos/platform',
+      '@contentos/ai',
+    ]);
   });
 });

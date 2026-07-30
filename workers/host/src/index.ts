@@ -122,3 +122,19 @@ export {
   NOTIFICATION_CONSUMER_GROUPS,
   notificationSubscriptions,
 } from './notifications/composition.js';
+
+// Job runner — the JobQueued consumer. No AI work, no provider call.
+export type { JobHandlerDeps } from './jobs/handlers.js';
+export {
+  createJobHandlers,
+  JOB_RUNNER_ACTOR,
+  JOB_START_FAILED,
+  JobStartFailedError,
+} from './jobs/handlers.js';
+
+export type { JobWorkerComposition, JobWorkerOptions } from './jobs/composition.js';
+export {
+  composeJobWorker,
+  JOB_CONSUMER_GROUPS,
+  JOB_REGISTRY_CONTRIBUTION,
+} from './jobs/composition.js';

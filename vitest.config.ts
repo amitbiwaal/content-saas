@@ -35,6 +35,7 @@ const root = (dir: string): string =>
 export default defineConfig({
   resolve: {
     alias: {
+      '@contentos/ai': pkg('ai'),
       '@contentos/contracts': pkg('contracts'),
       '@contentos/observability': pkg('observability'),
       '@contentos/database': pkg('database'),

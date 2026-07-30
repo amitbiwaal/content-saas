@@ -14,6 +14,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { AI_EMITTABLE_EVENT_TYPES } from '@contentos/ai';
 import type { DomainEvent, TenantContext } from '@contentos/contracts';
 import {
   composeEventRegistry,
@@ -88,8 +89,12 @@ function outboxTx(): { query: (q: string, p?: readonly unknown[]) => Promise<nev
 describe('both composition roots build a valid registry', () => {
   it('the API root composes and registers every platform type', () => {
     const { registry, declarations } = createApiEventRegistry();
-    expect(declarations).toHaveLength(PLATFORM_EMITTABLE_EVENT_TYPES.length);
-    for (const eventType of PLATFORM_EMITTABLE_EVENT_TYPES) {
+    // Both contributions: a root that carried only one would refuse to publish
+    // the other's events at the outbox boundary.
+    expect(declarations).toHaveLength(
+      PLATFORM_EMITTABLE_EVENT_TYPES.length + AI_EMITTABLE_EVENT_TYPES.length,
+    );
+    for (const eventType of [...PLATFORM_EMITTABLE_EVENT_TYPES, ...AI_EMITTABLE_EVENT_TYPES]) {
       expect(registry.isRegistered(eventType, 1), eventType).toBe(true);
     }
   });

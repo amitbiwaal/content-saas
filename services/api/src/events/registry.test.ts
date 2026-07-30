@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import { AI_EMITTABLE_EVENT_TYPES } from '@contentos/ai';
 import { PLATFORM_EMITTABLE_EVENT_TYPES } from '@contentos/platform';
 
 import { API_REGISTRY_CONTRIBUTIONS, createApiEventRegistry } from './registry.js';
@@ -22,9 +23,20 @@ describe('the API event registry', () => {
     }
   });
 
+  // The API queues jobs, so it must be able to publish JobQueued — a type it
+  // could not validate is one the outbox refuses at the boundary.
+  it('registers every event type the AI package can publish', () => {
+    const { registry } = createApiEventRegistry();
+    for (const eventType of AI_EMITTABLE_EVENT_TYPES) {
+      expect(registry.isRegistered(eventType, 1), eventType).toBe(true);
+    }
+  });
+
   it('registers nothing else', () => {
     const { declarations } = createApiEventRegistry();
-    expect(declarations).toHaveLength(PLATFORM_EMITTABLE_EVENT_TYPES.length);
+    expect(declarations).toHaveLength(
+      PLATFORM_EMITTABLE_EVENT_TYPES.length + AI_EMITTABLE_EVENT_TYPES.length,
+    );
   });
 
   it('resolves the declared tenant scope of a type', () => {
@@ -41,7 +53,10 @@ describe('the API event registry', () => {
   });
 
   it('names its contributions in one place', () => {
-    expect(API_REGISTRY_CONTRIBUTIONS.map((c) => c.source)).toEqual(['@contentos/platform']);
+    expect(API_REGISTRY_CONTRIBUTIONS.map((c) => c.source)).toEqual([
+      '@contentos/platform',
+      '@contentos/ai',
+    ]);
   });
 
   // Two registries in one process could disagree, and the disagreement would

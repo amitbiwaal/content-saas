@@ -9,6 +9,7 @@
     { "path": "./services/api" },
     { "path": "./packages/events" },
     { "path": "./packages/platform" },
+    { "path": "./packages/ai" },
     { "path": "./workers/host" }
   ]
 }

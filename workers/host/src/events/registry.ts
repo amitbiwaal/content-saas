@@ -20,9 +20,13 @@ import {
   type ComposedRegistry,
   type RegisteredHandler,
 } from '@contentos/events';
+import { AI_REGISTRY_CONTRIBUTION } from '@contentos/ai';
 import { PLATFORM_REGISTRY_CONTRIBUTION } from '@contentos/platform';
 
-export const WORKER_REGISTRY_CONTRIBUTIONS = [PLATFORM_REGISTRY_CONTRIBUTION];
+export const WORKER_REGISTRY_CONTRIBUTIONS = [
+  PLATFORM_REGISTRY_CONTRIBUTION,
+  AI_REGISTRY_CONTRIBUTION,
+];
 
 /**
  * Build the registry for a worker running `handlers`, or throw and refuse to

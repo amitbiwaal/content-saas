@@ -1,9 +1,9 @@
 {
-  "name": "@contentos/worker-host",
+  "name": "@contentos/ai",
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The single worker binary. Handler sets are selected by configuration.",
+  "description": "AI Platform: job orchestration, gateway, routing, prompts (08-ai-platform/).",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -20,11 +20,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@contentos/ai": "workspace:*",
     "@contentos/contracts": "workspace:*",
-    "@contentos/database": "workspace:*",
-    "@contentos/events": "workspace:*",
-    "@contentos/platform": "workspace:*"
+    "@contentos/security": "workspace:*"
   },
   "devDependencies": {}
 }

@@ -10,6 +10,7 @@
     "types": ["node"],
     "baseUrl": ".",
     "paths": {
+      "@contentos/ai": ["./packages/ai/src/index.ts"],
       "@contentos/contracts": ["./packages/contracts/src/index.ts"],
       "@contentos/observability": ["./packages/observability/src/index.ts"],
       "@contentos/database": ["./packages/database/src/index.ts"],
