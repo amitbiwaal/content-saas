@@ -9,8 +9,11 @@
  * `EventPublisher` interface from `contracts` rather than `@contentos/events`
  * (`07-development-guide/project-structure.md` rule 4).
  *
- * S2.1 delivers the job lifecycle only. No provider adapter, no prompt, no
- * routing, no execution.
+ * S2.1 delivered the job lifecycle; S2.2 adds the provider PORT. Still no
+ * adapter, no prompt, no routing, no execution — the canonical contracts the
+ * port speaks live in `@contentos/contracts`, because an engine issuing an
+ * AIRequest is a feature package and two feature packages may not import each
+ * other (`01-system-architecture/04-context-map.md`, Open Host Service).
  */
 
 // Job lifecycle — the pure state machine
@@ -86,3 +89,30 @@ export {
   JOB_RUNNER_GROUP,
   JOB_STREAM,
 } from './events/declarations.js';
+
+// The provider port — `08-ai-platform/provider-adapters.md`.
+// Concrete adapters implement this in `src/providers/`, the only directory
+// where a model provider SDK may be imported (ADR-019).
+export type { ModelProvider, ProviderHealth, ProviderHealthStatus } from './providers/provider.js';
+export {
+  PROVIDER_HEALTH_STATUSES,
+  isProviderHealthStatus,
+  supportsCapability,
+} from './providers/provider.js';
+
+export type { ProviderRegistry, ProviderRegistryErrorCode } from './providers/registry.js';
+export {
+  assertRegisterable,
+  createProviderRegistry,
+  PROVIDER_REGISTRY_ERROR_CODES,
+  ProviderRegistryError,
+} from './providers/registry.js';
+
+export { normalizeProviderError, throughProvider } from './providers/normalize.js';
+
+export type { AIValidationIssue, AIValidationResult } from './providers/validation.js';
+export {
+  assertCapabilityDeclared,
+  validateAIRequest,
+  validateAIResponse,
+} from './providers/validation.js';

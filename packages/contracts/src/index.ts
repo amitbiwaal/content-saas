@@ -74,3 +74,30 @@ export type {
   ThresholdSnapshot,
 } from './scoring/gate.js';
 export { composeGateVerdict, REASON_MANDATORY_CATEGORY_MISSING } from './scoring/gate.js';
+
+// AI — the Open Host Service of the AI Capability (`04-context-map.md`).
+// One published interface serves every context, which is why it is here and
+// not in `packages/ai`: an engine issuing an AIRequest is a feature package,
+// and two feature packages may not import each other.
+export type { AICapability } from './ai/capability.js';
+export { AI_CAPABILITIES, isAICapability } from './ai/capability.js';
+export type { AIMessage, AIParameters, AIRequest, AIRequestField, AIRole } from './ai/request.js';
+export { AI_REQUEST_FIELDS, AI_ROLES } from './ai/request.js';
+export type {
+  AIResponse,
+  AIResponseField,
+  CostEstimate,
+  FinishReason,
+  TokenUsage,
+  Usage,
+} from './ai/response.js';
+export { AI_RESPONSE_FIELDS, FINISH_REASONS, isFinishReason } from './ai/response.js';
+export type { ProviderErrorCode, ProviderErrorOptions } from './ai/errors.js';
+export {
+  isProviderError,
+  isProviderErrorCode,
+  isRetryableProviderErrorCode,
+  PROVIDER_ERROR_CODES,
+  ProviderError,
+  RETRYABLE_PROVIDER_ERROR_CODES,
+} from './ai/errors.js';

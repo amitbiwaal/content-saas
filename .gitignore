@@ -23,6 +23,9 @@ env/
 # Node / frontend
 node_modules/
 dist/
+# `vitest --coverage` output. CI uploads it as an artifact; committing it would
+# put a generated HTML report of the whole source tree in every diff.
+coverage/
 .vite/
 .next/
 out/
