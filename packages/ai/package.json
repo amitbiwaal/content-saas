@@ -20,8 +20,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.115.0",
     "@contentos/contracts": "workspace:*",
-    "@contentos/security": "workspace:*"
-  },
-  "devDependencies": {}
+    "@contentos/security": "workspace:*",
+    "@google/generative-ai": "0.24.1",
+    "openai": "7.2.0"
+  }
 }

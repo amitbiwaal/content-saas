@@ -11,8 +11,8 @@
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
  * pipeline, S2.4 the workflow runtime, S2.5 usage metering, S2.6 retry and
- * recovery, S2.7 streaming. Still no adapter, no routing, no transport, and
- * nothing that calls a model — or bills for one.
+ * recovery, S2.7 streaming, S2.8 the first real adapters. Still no routing and
+ * no gateway — and nothing bills for a call.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -363,3 +363,67 @@ export {
   startStream,
   STREAM_EVENT_KINDS,
 } from './streaming/engine.js';
+
+// Provider configuration — credentials and endpoints, from the environment.
+export type { CredentialEnvNames, ProviderCredentials } from './providers/config.js';
+export {
+  credentialEnvNames,
+  credentialsFromEnv,
+  ProviderConfigError,
+  SDK_MAX_RETRIES,
+  UNPRICED_COST,
+} from './providers/config.js';
+
+// The streaming half of the port — an EXTENSION of ModelProvider, never an
+// edit to it.
+export type { StreamingModelProvider } from './providers/streaming-provider.js';
+export { isStreamingProvider } from './providers/streaming-provider.js';
+
+// The adapters. The only code in the platform that knows a vendor exists.
+export type {
+  OpenAIAdapterOptions,
+  OpenAICompletion,
+  OpenAIRequestBody,
+  OpenAIStreamFrame,
+  OpenAITransport,
+} from './providers/openai.js';
+export {
+  createOpenAIProvider,
+  createOpenRouterProvider,
+  fromOpenAICompletion,
+  OPENAI_CAPABILITIES,
+  OPENAI_PROVIDER_ID,
+  OPENROUTER_BASE_URL,
+  OPENROUTER_PROVIDER_ID,
+  toOpenAIRequest,
+} from './providers/openai.js';
+
+export type {
+  AnthropicAdapterOptions,
+  AnthropicMessage,
+  AnthropicRequestBody,
+  AnthropicStreamEvent,
+  AnthropicTransport,
+} from './providers/anthropic.js';
+export {
+  ANTHROPIC_CAPABILITIES,
+  ANTHROPIC_PROVIDER_ID,
+  createAnthropicProvider,
+  fromAnthropicMessage,
+  toAnthropicRequest,
+} from './providers/anthropic.js';
+
+export type {
+  GoogleAdapterOptions,
+  GoogleContent,
+  GoogleRequestBody,
+  GoogleResponse,
+  GoogleTransport,
+} from './providers/google.js';
+export {
+  createGoogleProvider,
+  fromGoogleResponse,
+  GOOGLE_CAPABILITIES,
+  GOOGLE_PROVIDER_ID,
+  toGoogleRequest,
+} from './providers/google.js';
