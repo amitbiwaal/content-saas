@@ -92,6 +92,14 @@ export type {
   Usage,
 } from './ai/response.js';
 export { AI_RESPONSE_FIELDS, FINISH_REASONS, isFinishReason } from './ai/response.js';
+export type {
+  AIUsageRecord,
+  CostBreakdown,
+  UsageMetadata,
+  UsageMetadataField,
+  UsageResult,
+} from './ai/usage.js';
+export { USAGE_METADATA_FIELDS } from './ai/usage.js';
 export type { ProviderErrorCode, ProviderErrorOptions } from './ai/errors.js';
 export {
   isProviderError,

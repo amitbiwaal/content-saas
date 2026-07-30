@@ -10,8 +10,8 @@
  * (`07-development-guide/project-structure.md` rule 4).
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
- * pipeline, S2.4 the workflow runtime. Still no adapter, no routing, and
- * nothing that calls a model.
+ * pipeline, S2.4 the workflow runtime, S2.5 usage metering. Still no adapter,
+ * no routing, and nothing that calls a model — or bills for one.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -225,3 +225,46 @@ export {
   resultOf,
   start as startWorkflow,
 } from './workflow/engine.js';
+
+// Usage metering — `08-ai-platform/cost-management.md`.
+// It measures, computes and reports. It never bills, deducts, or persists.
+export {
+  COST_SCALE,
+  DECIMAL_PATTERN,
+  DecimalError,
+  formatDecimal,
+  isDecimalString,
+  parseDecimal,
+  PRICE_UNIT_TOKENS,
+  ZERO_COST,
+} from './usage/decimal.js';
+
+export type {
+  ModelPrice,
+  PricingErrorCode,
+  PricingRegistry,
+  PricingRegistryOptions,
+  ResolvedPrice,
+} from './usage/pricing.js';
+export {
+  assertPriceValid,
+  createPricingRegistry,
+  isPricingError,
+  PRICING_ERROR_CODES,
+  PricingError,
+} from './usage/pricing.js';
+
+export type { CostInput } from './usage/calculator.js';
+export { computeCost, costFrom, DEFAULT_CURRENCY, unpricedBreakdown } from './usage/calculator.js';
+
+export type { RecordUsageOptions, UsageErrorCode } from './usage/recorder.js';
+export {
+  isLedgerCompatibleAmount,
+  isUsageError,
+  ledgerKeyFor,
+  recordResponseUsage,
+  recordUsage,
+  UNKNOWN_TOKENIZER,
+  USAGE_ERROR_CODES,
+  UsageError,
+} from './usage/recorder.js';
