@@ -16,6 +16,14 @@ import { defineConfig } from 'vitest/config';
 const pkg = (name: string): string =>
   fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url));
 
+/**
+ * The two COMPOSITION ROOTS. They are not packages, but the conformance suite
+ * has to reach them: proving that a registry composes is only meaningful for
+ * the roots that actually compose one.
+ */
+const root = (dir: string): string =>
+  fileURLToPath(new URL(`./${dir}/src/index.ts`, import.meta.url));
+
 // Coverage thresholds are owned by `10-testing/testing-strategy.md` §9 and
 // applied here to the packages under their FROZEN names
 // (`repository-structure.md` §"Naming reconciliation carried forward"):
@@ -33,6 +41,8 @@ export default defineConfig({
       '@contentos/events': pkg('events'),
       '@contentos/platform': pkg('platform'),
       '@contentos/security': pkg('security'),
+      '@contentos/api': root('services/api'),
+      '@contentos/worker-host': root('workers/host'),
     },
   },
   test: {

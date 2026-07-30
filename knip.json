@@ -22,10 +22,12 @@
   "ignoreFiles": [".dependency-cruiser.cjs", "packages/*/drizzle.config.ts"],
   "//": "`tests/` is a conformance suite, not a workspace package, so it declares no dependencies of its own; the packages it wires together are listed here.",
   "ignoreDependencies": [
+    "@contentos/api",
     "@contentos/contracts",
     "@contentos/database",
     "@contentos/events",
     "@contentos/platform",
-    "@contentos/security"
+    "@contentos/security",
+    "@contentos/worker-host"
   ]
 }

@@ -49,6 +49,9 @@ export type {
 } from './pipeline/runner.js';
 export { runPipeline } from './pipeline/runner.js';
 
+// Event registry composition root — one registry per process, built at startup.
+export { API_REGISTRY_CONTRIBUTIONS, createApiEventRegistry } from './events/registry.js';
+
 export type { HealthHttpResponse, StartupState } from './health/endpoints.js';
 export {
   HEALTH_PATHS,

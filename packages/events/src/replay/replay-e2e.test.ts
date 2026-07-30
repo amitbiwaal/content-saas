@@ -184,6 +184,7 @@ function harness(outbox: OutboxRow[]) {
     eventType: 'ArticlePublished',
     version: 1,
     group: GROUP,
+    tenantScope: 'workspace',
     handle: (event: DomainEvent<unknown>, _ctx: TenantContext): Promise<void> => {
       // A handler must stamp the event's OWN occurrence time, never now().
       effects.push({ eventId: event.eventId, occurredAt: replayCtxOccurredAt });

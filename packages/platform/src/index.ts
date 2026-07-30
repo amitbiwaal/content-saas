@@ -287,3 +287,13 @@ export type {
   SuspensionCascadeSkip,
 } from './cascade/suspension.js';
 export { createSuspensionCascade, ORGANIZATION_CASCADE_KEY } from './cascade/suspension.js';
+
+// Event registry declarations — what a composition root registers.
+export {
+  ORGANIZATION_STREAM,
+  PLATFORM_EMITTABLE_EVENT_TYPES,
+  PLATFORM_EVENT_DECLARATIONS,
+  PLATFORM_REGISTRY_CONTRIBUTION,
+  PLATFORM_REGISTRY_SOURCE,
+  WORKSPACE_STREAM,
+} from './events/declarations.js';

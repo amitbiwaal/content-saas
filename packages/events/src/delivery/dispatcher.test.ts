@@ -74,6 +74,7 @@ function harness(
     eventType: 'ArticlePublished',
     version: 1,
     group: 'read-models',
+    tenantScope: 'workspace',
     handle: () => Promise.resolve(),
   };
   const dispatcher = createDispatcher({
@@ -100,6 +101,7 @@ describe('exactly-once effects', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => {
           calls += 1;
           return Promise.resolve();
@@ -124,6 +126,7 @@ describe('exactly-once effects', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => {
           calls += 1;
           return Promise.resolve();
@@ -143,6 +146,7 @@ describe('exactly-once effects', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(new Error('dependency down')),
       },
     });
@@ -218,6 +222,7 @@ describe('retry — transient only', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(new Error('ECONNRESET')),
       },
     });
@@ -245,6 +250,7 @@ describe('retry — transient only', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(failure),
       },
     });
@@ -264,6 +270,7 @@ describe('retry — transient only', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(new Error('still down')),
       },
     });
@@ -286,6 +293,7 @@ describe('no silent event loss', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(Object.assign(new Error('x'), { code: 'SchemaViolation' })),
       },
       onQuarantine: () => order.push('quarantine'),
@@ -301,6 +309,7 @@ describe('no silent event loss', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () => Promise.reject(Object.assign(new Error('x'), { code: 'GuardrailBlocked' })),
       },
     });
@@ -314,6 +323,7 @@ describe('no silent event loss', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: () =>
           Promise.reject(Object.assign(new Error('bad shape'), { code: 'SchemaViolation' })),
       },
@@ -335,6 +345,7 @@ describe('tenant context comes from the envelope', () => {
         eventType: 'ArticlePublished',
         version: 1,
         group: 'read-models',
+        tenantScope: 'workspace',
         handle: (_e, ctx) => {
           seen = { tenantId: ctx.tenantId, source: ctx.source };
           return Promise.resolve();

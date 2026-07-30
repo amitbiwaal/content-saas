@@ -41,6 +41,8 @@ const DECLARATION: EventTypeDeclaration = {
   eventType: WORKSPACE_SETTINGS_UPDATED,
   version: 1,
   state: 'active',
+  producer: 'platform.workspaces',
+  tenantScope: 'workspace',
   stream: 'workspace',
   consumers: [],
 };

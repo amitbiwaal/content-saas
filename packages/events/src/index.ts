@@ -20,13 +20,28 @@ export type {
   ConsumerDeclaration,
   Criticality,
   EventRegistry,
+  EventTenantScope,
   EventTypeDeclaration,
+  RegistryContribution,
   RegistryValidation,
   RetirementCheck,
   UnknownVersionPolicy,
   VersionState,
 } from './registry/registry.js';
 export { createEventRegistry, RegistryError } from './registry/registry.js';
+
+// Startup validation — every failure fails the process, none warns.
+export type { RegistryIssue, RegistryIssueCode } from './registry/validation.js';
+export {
+  assertNoIssues,
+  RegistryValidationError,
+  validateContributionCoverage,
+  validateDeclarations,
+} from './registry/validation.js';
+
+// Composition — ONE registry per process, assembled at the process edge.
+export type { ComposedRegistry, RegistryCompositionOptions } from './registry/composition.js';
+export { composeEventRegistry } from './registry/composition.js';
 
 export type { OutboxPublisherOptions, TransactionalExecutor } from './outbox/publisher.js';
 export { createOutboxPublisher } from './outbox/publisher.js';
@@ -71,7 +86,7 @@ export type {
   DispatchOutcome,
   RegisteredHandler,
 } from './delivery/dispatcher.js';
-export { createDispatcher } from './delivery/dispatcher.js';
+export { createDispatcher, TENANT_SCOPE_MISMATCH } from './delivery/dispatcher.js';
 
 // Dead letter queue — ADR-027
 export type {

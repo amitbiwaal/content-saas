@@ -51,6 +51,8 @@ const DECLARATIONS: readonly EventTypeDeclaration[] = WORKSPACE_EVENT_TYPES.map(
   eventType,
   version: 1,
   state: 'active' as const,
+  producer: 'platform.workspaces',
+  tenantScope: 'workspace' as const,
   stream: 'workspace',
   consumers: [],
 }));

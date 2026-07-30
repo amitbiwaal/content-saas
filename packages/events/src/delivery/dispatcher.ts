@@ -18,7 +18,7 @@
  *   after everything else has declined to handle it.
  */
 
-import type { DomainEvent, TenantContext } from '@contentos/contracts';
+import type { DomainEvent, EventTenantScope, TenantContext } from '@contentos/contracts';
 
 import type { AggregateBarrier, GuardExecutor, IdempotencyGuard } from './guards.js';
 import type { DeadLetterReason, RetryEngine } from './retry.js';
@@ -28,6 +28,16 @@ export interface RegisteredHandler {
   /** Exactly one version per handler. Handlers contain NO version branching. */
   readonly version: number;
   readonly group: string;
+  /**
+   * The tenant scope this handler is written for — ADR-029. Declared, never
+   * inferred.
+   *
+   * A handler that reconstructs workspace context from an organization-scoped
+   * event sets `app.tenant_id` to an organization id and reads zero rows
+   * without erroring. Composition rejects a mismatch at startup; the dispatcher
+   * re-checks it as defence in depth.
+   */
+  readonly tenantScope: EventTenantScope;
   handle(
     event: DomainEvent<unknown>,
     ctx: TenantContext,
@@ -57,7 +67,19 @@ export interface DispatchDeps {
   readonly transaction: <T>(work: (tx: GuardExecutor) => Promise<T>) => Promise<T>;
   readonly quarantine: (request: DeadLetterRequest) => Promise<void>;
   readonly onOutcome?: (outcome: DispatchOutcome) => void;
+  /**
+   * The declared tenant scope of an event type — ADR-029, supplied by the
+   * composed registry.
+   *
+   * OPTIONAL so that composing it is a decision of the process root and every
+   * existing caller behaves exactly as before. When present, an event whose
+   * declared scope disagrees with the handler's is refused.
+   */
+  readonly tenantScopeOf?: (eventType: string, version: number) => EventTenantScope | undefined;
 }
+
+/** The failure code recorded when a scope mismatch reaches delivery. */
+export const TENANT_SCOPE_MISMATCH = 'TenantScopeMismatch';
 
 export type DispatchOutcome =
   | { readonly kind: 'handled'; readonly eventId: string; readonly group: string }
@@ -114,6 +136,31 @@ export function createDispatcher(deps: DispatchDeps): Dispatcher {
 
   return {
     async dispatch(event, handler, attempt, signal): Promise<DispatchOutcome> {
+      // 0 · SCOPE — ADR-029, before the barrier.
+      //
+      // A mismatch is a DEFECT, not a transient failure: retrying it would
+      // produce the same wrong answer, and letting it through would have the
+      // handler reconstruct tenant context from the wrong scope and read zero
+      // rows without erroring. Quarantined before the barrier is acquired and
+      // before any idempotency marker is consumed, so the aggregate is not
+      // advanced and a corrected deployment can replay it.
+      const declaredScope = deps.tenantScopeOf?.(event.eventType, event.eventVersion);
+      if (declaredScope !== undefined && declaredScope !== handler.tenantScope) {
+        await deps.quarantine({
+          event,
+          consumerGroup: handler.group,
+          failureCode: TENANT_SCOPE_MISMATCH,
+          failureMessage: `${event.eventType}@${String(event.eventVersion)} is '${declaredScope}'-scoped but the handler in group '${handler.group}' accepts '${handler.tenantScope}'.`,
+          reason: 'terminal-classification',
+        });
+        return emit({
+          kind: 'dead-lettered',
+          eventId: event.eventId,
+          group: handler.group,
+          code: TENANT_SCOPE_MISMATCH,
+        });
+      }
+
       // 1 · BARRIER — outermost.
       const token = await deps.barrier.acquire(handler.group, event.aggregateId, event.eventId);
       if (token === 'held') {

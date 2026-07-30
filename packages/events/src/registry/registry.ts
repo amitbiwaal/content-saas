@@ -12,31 +12,25 @@
 
 import type { DomainEvent } from '@contentos/contracts';
 
-export type Criticality = 'standard' | 'critical';
-export type UnknownVersionPolicy = 'transform' | 'dead-letter';
+/**
+ * The declaration shapes moved to `packages/contracts` so a producing package
+ * can declare its own event types without importing this one — two feature
+ * packages may not import each other. They are re-exported here unchanged, so
+ * every existing importer of `@contentos/events` is unaffected.
+ *
+ * This package still owns the ENGINE: validation, versioning, transformation.
+ */
+export type {
+  ConsumerDeclaration,
+  Criticality,
+  EventTenantScope,
+  EventTypeDeclaration,
+  RegistryContribution,
+  UnknownVersionPolicy,
+  VersionState,
+} from '@contentos/contracts';
 
-export interface ConsumerDeclaration {
-  readonly consumerGroup: string;
-  readonly component: string;
-  /** The GROUP's set — more than one element only during a migration window. */
-  readonly versions: readonly number[];
-  readonly criticality: Criticality;
-  readonly handlerIdempotencyKey: string;
-  readonly onUnknownVersion: UnknownVersionPolicy;
-}
-
-export type VersionState = 'active' | 'deprecated' | 'retired';
-
-export interface EventTypeDeclaration {
-  readonly eventType: string;
-  readonly version: number;
-  readonly state: VersionState;
-  /** Redis stream this type is appended to. */
-  readonly stream: string;
-  readonly consumers: readonly ConsumerDeclaration[];
-  /** Transform from this version to version + 1. Absent on the newest version. */
-  readonly upcast?: (payload: unknown) => unknown;
-}
+import type { ConsumerDeclaration, EventTypeDeclaration, VersionState } from '@contentos/contracts';
 
 export interface RetirementCheck {
   readonly eligible: boolean;

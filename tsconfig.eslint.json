@@ -15,7 +15,9 @@
       "@contentos/database": ["./packages/database/src/index.ts"],
       "@contentos/events": ["./packages/events/src/index.ts"],
       "@contentos/platform": ["./packages/platform/src/index.ts"],
-      "@contentos/security": ["./packages/security/src/index.ts"]
+      "@contentos/security": ["./packages/security/src/index.ts"],
+      "@contentos/api": ["./services/api/src/index.ts"],
+      "@contentos/worker-host": ["./workers/host/src/index.ts"]
     }
   },
   "include": [

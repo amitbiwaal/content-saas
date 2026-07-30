@@ -20,7 +20,10 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@contentos/observability": "workspace:*"
+    "@contentos/contracts": "workspace:*",
+    "@contentos/events": "workspace:*",
+    "@contentos/observability": "workspace:*",
+    "@contentos/platform": "workspace:*"
   },
   "devDependencies": {}
 }

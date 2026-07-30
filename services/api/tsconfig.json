@@ -6,9 +6,27 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "types": ["node"],
     "baseUrl": "../..",
-    "paths": { "@contentos/observability": ["./packages/observability/src/index.ts"] }
+    "paths": {
+      "@contentos/contracts": ["./packages/contracts/src/index.ts"],
+      "@contentos/events": ["./packages/events/src/index.ts"],
+      "@contentos/observability": ["./packages/observability/src/index.ts"],
+      "@contentos/platform": ["./packages/platform/src/index.ts"]
+    }
   },
   "include": ["src/**/*.ts"],
   "exclude": ["src/**/*.test.ts", "dist"],
-  "references": [{ "path": "../../packages/observability" }]
+  "references": [
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/events"
+    },
+    {
+      "path": "../../packages/observability"
+    },
+    {
+      "path": "../../packages/platform"
+    }
+  ]
 }

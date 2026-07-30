@@ -15,6 +15,16 @@ export type { DomainEvent, EnvelopeField } from './events/envelope.js';
 export { ENVELOPE_FIELDS } from './events/envelope.js';
 export type { EventPublisher, OutboxPublisher } from './events/publisher.js';
 export type {
+  ConsumerDeclaration,
+  Criticality,
+  EventTenantScope,
+  EventTypeDeclaration,
+  RegistryContribution,
+  UnknownVersionPolicy,
+  VersionState,
+} from './events/registry.js';
+export { EVENT_TENANT_SCOPES, isEventTenantScope } from './events/registry.js';
+export type {
   BarrierToken,
   BusEntryId,
   BusPosition,

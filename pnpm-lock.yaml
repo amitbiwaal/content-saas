@@ -89,9 +89,18 @@ importers:
 
   services/api:
     dependencies:
+      '@contentos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@contentos/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@contentos/observability':
         specifier: workspace:*
         version: link:../../packages/observability
+      '@contentos/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
 
   workers/host:
     dependencies:
@@ -101,6 +110,9 @@ importers:
       '@contentos/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@contentos/platform':
+        specifier: workspace:*
+        version: link:../../packages/platform
 
 packages:
 

@@ -22,6 +22,9 @@ export {
   DEFAULT_RECOVER_EVERY_CYCLES,
 } from './relay-worker.js';
 
+// Event registry composition root — one registry per process, built at startup.
+export { createWorkerEventRegistry, WORKER_REGISTRY_CONTRIBUTIONS } from './events/registry.js';
+
 // Health probes. Liveness and readiness are deliberately separate: a draining
 // worker must be taken out of rotation WITHOUT being killed mid-publish.
 export type {

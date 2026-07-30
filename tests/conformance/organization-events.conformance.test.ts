@@ -59,6 +59,8 @@ const DECLARATIONS: readonly EventTypeDeclaration[] = ORGANIZATION_EVENT_TYPES.m
   eventType,
   version: 1,
   state: 'active' as const,
+  producer: 'platform.organizations',
+  tenantScope: 'organization' as const,
   stream: 'organization',
   consumers: [],
 }));

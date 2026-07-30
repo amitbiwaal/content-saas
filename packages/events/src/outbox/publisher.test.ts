@@ -10,7 +10,15 @@ const TENANT = '018f7a1e-0000-7000-8000-0000000000bb';
 const ORG = '018f7a1e-0000-7000-8000-0000000000aa';
 
 const registry: EventRegistry = createEventRegistry([
-  { eventType: 'ArticlePublished', version: 1, state: 'active', stream: 'article', consumers: [] },
+  {
+    eventType: 'ArticlePublished',
+    version: 1,
+    state: 'active',
+    stream: 'article',
+    producer: 'content-platform',
+    tenantScope: 'workspace',
+    consumers: [],
+  },
 ]);
 
 function event(
@@ -95,7 +103,15 @@ describe('validation happens before commit', () => {
 
   it('rejects a retired version', async () => {
     const retired = createEventRegistry([
-      { eventType: 'OldThingHappened', version: 1, state: 'retired', stream: 's', consumers: [] },
+      {
+        eventType: 'OldThingHappened',
+        version: 1,
+        state: 'retired',
+        stream: 's',
+        producer: 'content-platform',
+        tenantScope: 'workspace',
+        consumers: [],
+      },
     ]);
     await expect(
       createOutboxPublisher({ registry: retired }).publish(
