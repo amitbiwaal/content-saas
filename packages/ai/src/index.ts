@@ -9,11 +9,15 @@
  * `EventPublisher` interface from `contracts` rather than `@contentos/events`
  * (`07-development-guide/project-structure.md` rule 4).
  *
- * S2.1 delivered the job lifecycle; S2.2 adds the provider PORT. Still no
- * adapter, no prompt, no routing, no execution — the canonical contracts the
- * port speaks live in `@contentos/contracts`, because an engine issuing an
- * AIRequest is a feature package and two feature packages may not import each
- * other (`01-system-architecture/04-context-map.md`, Open Host Service).
+ * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
+ * pipeline. Still no adapter, no routing, no execution.
+ *
+ * The canonical request and response live in `@contentos/contracts`, because an
+ * engine issuing an AIRequest is a feature package and two feature packages may
+ * not import each other. The prompt contracts stay HERE: the same document
+ * names AIRequest/AIResponse the Open Host Service and PromptTemplate part of
+ * this capability's own vocabulary
+ * (`01-system-architecture/04-context-map.md`).
  */
 
 // Job lifecycle — the pure state machine
@@ -116,3 +120,52 @@ export {
   validateAIRequest,
   validateAIResponse,
 } from './providers/validation.js';
+
+// The prompt pipeline — `08-ai-platform/prompt-engine.md`.
+// It renders; it does not retrieve, route, or dispatch.
+export type {
+  PromptContext,
+  PromptContextBlock,
+  PromptContextSlot,
+  PromptErrorCode,
+  PromptInput,
+  PromptModelHints,
+  PromptParts,
+  PromptTemplate,
+  PromptTemplateRef,
+  PromptTemplateStatus,
+  PromptVariableType,
+  VariableDeclaration,
+} from './prompts/template.js';
+export {
+  isPromptError,
+  isPromptVariableType,
+  PROMPT_ERROR_CODES,
+  PROMPT_TEMPLATE_STATUSES,
+  PROMPT_VARIABLE_TYPES,
+  PromptError,
+  promptVersionOf,
+} from './prompts/template.js';
+
+export type { PromptIssue, PromptValidationResult } from './prompts/validation.js';
+export {
+  MAX_CONTEXT_BLOCKS,
+  MAX_PROMPT_CHARS,
+  MAX_TEMPLATE_CHARS,
+  placeholdersIn,
+  PLACEHOLDER,
+  validatePromptTemplate,
+} from './prompts/validation.js';
+
+export type { CompiledPrompt, CompileOptions } from './prompts/compile.js';
+export { compilePrompt } from './prompts/compile.js';
+
+export type { PromptCatalogue } from './prompts/resolver.js';
+export { createPromptCatalogue } from './prompts/resolver.js';
+
+export type {
+  PrepareExecutionOptions,
+  PromptExecutionRequest,
+  PromptExecutionResult,
+} from './prompts/execution.js';
+export { completeExecution, prepareExecution } from './prompts/execution.js';
