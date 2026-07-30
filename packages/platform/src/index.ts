@@ -151,3 +151,105 @@ export {
   WORKSPACE_CREATING_ORG_STATUS,
   WORKSPACE_PREVIOUS_STATUS_KEY,
 } from './workspaces/service.js';
+
+// Memberships — the pure domain shared by both tiers
+export type {
+  MembershipErrorCode,
+  MembershipProjection,
+  MembershipStatus,
+} from './memberships/membership.js';
+export {
+  canGrantOrganizationRole,
+  canGrantWorkspaceRole,
+  INVITATION_TTL_DAYS,
+  invitationExpiry,
+  isInvitationExpired,
+  isMembershipStatus,
+  MEMBERSHIP_STATUSES,
+  MembershipError,
+  ORGANIZATION_OWNER_ROLE,
+  ORGANIZATION_ROLE_GRANTS,
+  toRoleBinding,
+  WORKSPACE_OWNER_ROLE,
+  WORKSPACE_ROLE_GRANTS,
+  wouldRemoveLastOwner,
+} from './memberships/membership.js';
+
+// Membership events
+export type {
+  MembershipAcceptedPayload,
+  MembershipEventContext,
+  MembershipInvitedPayload,
+  MembershipRevokedPayload,
+  MembershipRoleChangedPayload,
+  OrganizationMembershipEventType,
+  OrgMembershipAcceptedPayload,
+  OrgMembershipInvitedPayload,
+  OrgMembershipRevokedPayload,
+  OrgMembershipRoleChangedPayload,
+  WorkspaceMembershipEventType,
+} from './memberships/events.js';
+export {
+  membershipAccepted,
+  membershipInvited,
+  MEMBERSHIP_PRODUCER,
+  membershipRevoked,
+  membershipRoleChanged,
+  ORGANIZATION_MEMBERSHIP_AGGREGATE,
+  ORGANIZATION_MEMBERSHIP_EVENT_TYPES,
+  orgMembershipAccepted,
+  orgMembershipInvited,
+  orgMembershipRevoked,
+  orgMembershipRoleChanged,
+  WORKSPACE_MEMBERSHIP_AGGREGATE,
+  WORKSPACE_MEMBERSHIP_EVENT_TYPES,
+} from './memberships/events.js';
+
+// Organization memberships
+export type {
+  AcceptOrganizationInvitationCommand,
+  ChangeOrganizationRoleCommand,
+  InviteOrganizationMemberCommand,
+  MembershipActor,
+  MembershipExecutor,
+  MembershipResult,
+  OrganizationMembership,
+  OrganizationMembershipAuditAction,
+  OrganizationMembershipService,
+  OrganizationMembershipServiceOptions,
+  RevokeOrganizationMembershipCommand,
+} from './memberships/organization-memberships.js';
+export {
+  createOrganizationMembershipService,
+  ORGANIZATION_MEMBERSHIP_AUDIT_ACTIONS,
+  organizationMembershipBinding,
+} from './memberships/organization-memberships.js';
+
+// Workspace memberships
+export type {
+  AcceptWorkspaceInvitationCommand,
+  ChangeWorkspaceRoleCommand,
+  InviteWorkspaceMemberCommand,
+  RevokeWorkspaceMembershipCommand,
+  WorkspaceMembership,
+  WorkspaceMembershipAuditAction,
+  WorkspaceMembershipResult,
+  WorkspaceMembershipService,
+  WorkspaceMembershipServiceOptions,
+} from './memberships/workspace-memberships.js';
+export {
+  createWorkspaceMembershipService,
+  WORKSPACE_MEMBERSHIP_AUDIT_ACTIONS,
+  workspaceMembershipBinding,
+} from './memberships/workspace-memberships.js';
+
+// The organization → workspace revocation cascade
+export type {
+  CascadeOutcome,
+  CascadeRequest,
+  CascadeResult,
+  MembershipCascade,
+  MembershipCascadeOptions,
+  WorkspaceScopedRunner,
+} from './memberships/cascade.js';
+export { createMembershipCascade } from './memberships/cascade.js';
