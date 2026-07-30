@@ -253,3 +253,37 @@ export type {
   WorkspaceScopedRunner,
 } from './memberships/cascade.js';
 export { createMembershipCascade } from './memberships/cascade.js';
+
+// Workspace settings updates — the storage layer and its append-only history
+export type {
+  SettingsActor,
+  SettingsErrorCode,
+  SettingsExecutor,
+  UpdateWorkspaceSettingsCommand,
+  WorkspaceSettingsResult,
+  WorkspaceSettingsService,
+  WorkspaceSettingsServiceOptions,
+} from './settings/workspace-settings.js';
+export {
+  createWorkspaceSettingsService,
+  SETTINGS_UPDATE_PERMISSION,
+  SETTINGS_WRITABLE_STATUSES,
+  WORKSPACE_SETTINGS_AUDIT_ACTION,
+  WorkspaceSettingsError,
+} from './settings/workspace-settings.js';
+export type { SettingsEventContext, WorkspaceSettingsUpdatedPayload } from './settings/events.js';
+export { WORKSPACE_SETTINGS_UPDATED, workspaceSettingsUpdated } from './settings/events.js';
+
+// Organization → workspace suspension cascade
+export type {
+  CascadeSkipReason,
+  OrganizationWorkspace,
+  OrganizationWorkspaceRunner,
+  SuspensionCascade,
+  SuspensionCascadeFailure,
+  SuspensionCascadeOptions,
+  SuspensionCascadeRequest,
+  SuspensionCascadeResult,
+  SuspensionCascadeSkip,
+} from './cascade/suspension.js';
+export { createSuspensionCascade, ORGANIZATION_CASCADE_KEY } from './cascade/suspension.js';
