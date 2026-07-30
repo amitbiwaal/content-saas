@@ -8,6 +8,7 @@
     "baseUrl": "../..",
     "paths": {
       "@contentos/contracts": ["./packages/contracts/src/index.ts"],
+      "@contentos/database": ["./packages/database/src/index.ts"],
       "@contentos/events": ["./packages/events/src/index.ts"],
       "@contentos/platform": ["./packages/platform/src/index.ts"]
     }
@@ -17,6 +18,9 @@
   "references": [
     {
       "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/database"
     },
     {
       "path": "../../packages/events"

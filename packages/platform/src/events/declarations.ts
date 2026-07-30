@@ -17,14 +17,17 @@
  * nineteen event types with no declarations at all.
  *
  * ── Consumers are declared with their handlers, not before ──────────────────
- * Every entry below declares `consumers: []`. Sprint 1's consumers are the two
- * cascades, and they arrive in T3.2 WITH their handlers — because composition
- * refuses to start a consumer process where a declared group has no handler.
- * Declaring a group early would break startup until the handler caught up,
- * which is the wrong order to fail in.
+ * Composition refuses to start a consumer process where a declared group has
+ * no handler, so a group is declared in the same increment that supplies its
+ * handler. T3.1 declared none; T3.2 adds the two cascade groups below, and the
+ * handlers for them land in `workers/host` at the same time.
  */
 
-import type { EventTypeDeclaration, RegistryContribution } from '@contentos/contracts';
+import type {
+  ConsumerDeclaration,
+  EventTypeDeclaration,
+  RegistryContribution,
+} from '@contentos/contracts';
 
 import {
   MEMBERSHIP_PRODUCER,
@@ -48,11 +51,50 @@ export const PLATFORM_REGISTRY_SOURCE = '@contentos/platform';
 export const ORGANIZATION_STREAM = 'organization';
 export const WORKSPACE_STREAM = 'workspace';
 
+/**
+ * The two cascade consumer groups.
+ *
+ * ── Why suspension and reactivation share ONE group ─────────────────────────
+ * They are the same aggregate's ordered lifecycle: both carry the organization
+ * as `aggregateId`, and the aggregate barrier orders a group's deliveries per
+ * aggregate. Split across two groups they would advance independently, and a
+ * lagging suspension could be applied AFTER the reactivation that was meant to
+ * undo it — leaving every workspace suspended with nothing left to reactivate
+ * them. One group makes that unrepresentable.
+ *
+ * ── Why membership revocation is separate ───────────────────────────────────
+ * Its aggregate is the membership, not the organization, so it shares no
+ * ordering constraint with the lifecycle events. Keeping it apart also keeps
+ * its lag and DLQ depth separately observable, and the two page for different
+ * reasons: a stalled membership revocation is a stale-permission security
+ * issue, a stalled suspension is a revenue-integrity one.
+ */
+export const ORGANIZATION_LIFECYCLE_CASCADE_GROUP = 'organization-lifecycle-cascade';
+export const ORGANIZATION_MEMBERSHIP_CASCADE_GROUP = 'organization-membership-cascade';
+
+/** The component hosting both groups — the single worker binary. */
+const CASCADE_COMPONENT = 'workers.host.cascade';
+
+function cascadeConsumer(consumerGroup: string): ConsumerDeclaration {
+  return {
+    consumerGroup,
+    component: CASCADE_COMPONENT,
+    versions: [1],
+    // Both cascades page on a DLQ entry: an active workspace under a suspended
+    // organization is a revenue-integrity failure, and a member who kept access
+    // after revocation is a security one.
+    criticality: 'critical',
+    handlerIdempotencyKey: consumerGroup,
+    onUnknownVersion: 'dead-letter',
+  };
+}
+
 function declare(
   eventType: string,
   producer: string,
   stream: string,
   tenantScope: 'workspace' | 'organization',
+  consumers: readonly ConsumerDeclaration[] = [],
 ): EventTypeDeclaration {
   return {
     eventType,
@@ -61,9 +103,16 @@ function declare(
     stream,
     producer,
     tenantScope,
-    consumers: [],
+    consumers,
   };
 }
+
+/** Which cascade group, if any, consumes a given organization-scoped type. */
+const CASCADE_CONSUMERS: Readonly<Record<string, readonly ConsumerDeclaration[]>> = {
+  OrganizationSuspended: [cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP)],
+  OrganizationReactivated: [cascadeConsumer(ORGANIZATION_LIFECYCLE_CASCADE_GROUP)],
+  OrgMembershipRevoked: [cascadeConsumer(ORGANIZATION_MEMBERSHIP_CASCADE_GROUP)],
+};
 
 /**
  * Organization-scoped: the aggregate is the organization, so `tenantId` is the
@@ -71,13 +120,26 @@ function declare(
  * tenant context from them.
  */
 const ORGANIZATION_DECLARATIONS: readonly EventTypeDeclaration[] = ORGANIZATION_EVENT_TYPES.map(
-  (eventType) => declare(eventType, ORGANIZATION_PRODUCER, ORGANIZATION_STREAM, 'organization'),
+  (eventType) =>
+    declare(
+      eventType,
+      ORGANIZATION_PRODUCER,
+      ORGANIZATION_STREAM,
+      'organization',
+      CASCADE_CONSUMERS[eventType],
+    ),
 );
 
 /** Organization-scoped for the same reason: the membership belongs to the organization. */
 const ORGANIZATION_MEMBERSHIP_DECLARATIONS: readonly EventTypeDeclaration[] =
   ORGANIZATION_MEMBERSHIP_EVENT_TYPES.map((eventType) =>
-    declare(eventType, MEMBERSHIP_PRODUCER, ORGANIZATION_STREAM, 'organization'),
+    declare(
+      eventType,
+      MEMBERSHIP_PRODUCER,
+      ORGANIZATION_STREAM,
+      'organization',
+      CASCADE_CONSUMERS[eventType],
+    ),
   );
 
 /** Workspace-scoped: `workspaces.id` IS `tenant_id` (ADR-017). */

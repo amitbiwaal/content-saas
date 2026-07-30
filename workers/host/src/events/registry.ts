@@ -30,11 +30,19 @@ export const WORKER_REGISTRY_CONTRIBUTIONS = [PLATFORM_REGISTRY_CONTRIBUTION];
  *
  * `handlers` is what this process was configured to run — one binary hosts any
  * set of registered handlers, selected by configuration
- * (`13-event-platform/workers.md`). Validation is two-way: every declared
- * group needs a handler, and every handler needs a declaration whose tenant
- * scope it agrees with (ADR-029).
+ * (`13-event-platform/workers.md`). Every handler is checked against a
+ * declaration whose tenant scope it agrees with (ADR-029).
  *
- * Passing none is valid and is what the relay-only deployment does.
+ * ── Why platform-wide group completeness is NOT required here ───────────────
+ * The registry declares every consumer group in the platform; a given process
+ * hosts a SUBSET. Requiring a handler for all of them would mean the
+ * relay-only deployment — which hosts none — could not start, and every new
+ * group anywhere would break every worker.
+ *
+ * The invariant that matters is narrower and is checked where the information
+ * exists: a process must have a handler for every type of every group it
+ * actually SUBSCRIBES to. That is `assertSubscriptionsMatchRegistry`, which
+ * knows the subscriptions; this does not.
  */
 export function createWorkerEventRegistry(
   handlers: readonly RegisteredHandler[] = [],
@@ -42,7 +50,6 @@ export function createWorkerEventRegistry(
   return composeEventRegistry({
     contributions: WORKER_REGISTRY_CONTRIBUTIONS,
     handlers,
-    // A consumer process is exactly where an unhandled group is a defect.
-    requireHandlers: true,
+    requireHandlers: false,
   });
 }

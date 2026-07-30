@@ -290,6 +290,8 @@ export { createSuspensionCascade, ORGANIZATION_CASCADE_KEY } from './cascade/sus
 
 // Event registry declarations — what a composition root registers.
 export {
+  ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
+  ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,
   PLATFORM_EMITTABLE_EVENT_TYPES,
   PLATFORM_EVENT_DECLARATIONS,

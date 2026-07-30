@@ -107,6 +107,9 @@ importers:
       '@contentos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@contentos/database':
+        specifier: workspace:*
+        version: link:../../packages/database
       '@contentos/events':
         specifier: workspace:*
         version: link:../../packages/events

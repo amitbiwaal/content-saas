@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@contentos/contracts": "workspace:*",
+    "@contentos/database": "workspace:*",
     "@contentos/events": "workspace:*",
     "@contentos/platform": "workspace:*"
   },

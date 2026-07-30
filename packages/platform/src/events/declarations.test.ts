@@ -17,6 +17,8 @@ import { ORGANIZATION_EVENT_TYPES, ORGANIZATION_PRODUCER } from '../organization
 import { WORKSPACE_SETTINGS_UPDATED } from '../settings/events.js';
 import { WORKSPACE_EVENT_TYPES, WORKSPACE_PRODUCER } from '../workspaces/events.js';
 import {
+  ORGANIZATION_LIFECYCLE_CASCADE_GROUP,
+  ORGANIZATION_MEMBERSHIP_CASCADE_GROUP,
   ORGANIZATION_STREAM,
   PLATFORM_EMITTABLE_EVENT_TYPES,
   PLATFORM_EVENT_DECLARATIONS,
@@ -122,13 +124,58 @@ describe('producers and streams', () => {
   });
 });
 
-describe('consumers arrive with their handlers', () => {
-  // Composition refuses to start a consumer process where a declared group has
-  // no handler, so declaring a group before its handler exists would break
-  // startup until the handler caught up. T3.2 adds both together.
-  it('declares no consumer groups yet', () => {
+describe('cascade consumer groups', () => {
+  const groupsOf = (eventType: string): string[] =>
+    (byType.get(eventType)?.consumers ?? []).map((c) => c.consumerGroup);
+
+  // Suspension and reactivation are the same aggregate's ordered lifecycle:
+  // split across two groups, a lagging suspension could be applied AFTER the
+  // reactivation meant to undo it.
+  it('puts suspension and reactivation in ONE group', () => {
+    expect(groupsOf('OrganizationSuspended')).toEqual([ORGANIZATION_LIFECYCLE_CASCADE_GROUP]);
+    expect(groupsOf('OrganizationReactivated')).toEqual([ORGANIZATION_LIFECYCLE_CASCADE_GROUP]);
+  });
+
+  // A different aggregate, so no shared ordering constraint — and its lag and
+  // DLQ page for a different reason.
+  it('gives membership revocation its own group', () => {
+    expect(groupsOf('OrgMembershipRevoked')).toEqual([ORGANIZATION_MEMBERSHIP_CASCADE_GROUP]);
+  });
+
+  it('declares consumers on exactly those three types and no others', () => {
+    const consumed = PLATFORM_EVENT_DECLARATIONS.filter((d) => d.consumers.length > 0).map(
+      (d) => d.eventType,
+    );
+    expect([...consumed].sort()).toEqual([
+      'OrgMembershipRevoked',
+      'OrganizationReactivated',
+      'OrganizationSuspended',
+    ]);
+  });
+
+  it('marks both cascades critical — each pages for its own reason', () => {
     for (const declaration of PLATFORM_EVENT_DECLARATIONS) {
-      expect(declaration.consumers, declaration.eventType).toEqual([]);
+      for (const consumer of declaration.consumers) {
+        expect(consumer.criticality, declaration.eventType).toBe('critical');
+        expect(consumer.versions, declaration.eventType).toEqual([1]);
+        expect(consumer.onUnknownVersion, declaration.eventType).toBe('dead-letter');
+      }
+    }
+  });
+
+  // A group name is platform-wide; two components sharing one would share a
+  // Redis offset and each see a fraction of the stream.
+  it('gives every group exactly one component', () => {
+    const components = new Map<string, Set<string>>();
+    for (const declaration of PLATFORM_EVENT_DECLARATIONS) {
+      for (const consumer of declaration.consumers) {
+        const set = components.get(consumer.consumerGroup) ?? new Set<string>();
+        set.add(consumer.component);
+        components.set(consumer.consumerGroup, set);
+      }
+    }
+    for (const [group, set] of components) {
+      expect([...set], group).toHaveLength(1);
     }
   });
 });

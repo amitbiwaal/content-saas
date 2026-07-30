@@ -44,3 +44,43 @@ export {
   livenessProbe,
   readinessProbe,
 } from './health-endpoint.js';
+
+// Cascade consumer workers — runtime execution for the two cascade libraries.
+export type {
+  ConsumerGroupHealth,
+  ConsumerSubscription,
+  ConsumerWorker,
+  ConsumerWorkerDeps,
+  ConsumerWorkerHealth,
+  ConsumerWorkerStatus,
+  QuarantineDeps,
+  RetryHistory,
+} from './cascade/consumer-worker.js';
+export {
+  assertSubscriptionsMatchRegistry,
+  createConsumerWorker,
+  createQuarantine,
+  createRetryHistory,
+  DEFAULT_BATCH_SIZE,
+  DEFAULT_BLOCK_MS,
+  DEFAULT_IDLE_INTERVAL_MS as DEFAULT_CONSUMER_IDLE_INTERVAL_MS,
+  SubscriptionValidationError,
+} from './cascade/consumer-worker.js';
+
+export type { CascadeHandlerDeps } from './cascade/handlers.js';
+export {
+  CASCADE_ACTOR,
+  CASCADE_INCOMPLETE,
+  CascadeIncompleteError,
+  createCascadeHandlers,
+} from './cascade/handlers.js';
+
+export type { CascadeRunners } from './cascade/ports.js';
+export { createCascadeRunners } from './cascade/ports.js';
+
+export type { CascadeWorkerComposition, CascadeWorkerOptions } from './cascade/composition.js';
+export {
+  CASCADE_CONSUMER_GROUPS,
+  composeCascadeWorker,
+  subscriptionsFor,
+} from './cascade/composition.js';
