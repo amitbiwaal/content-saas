@@ -11,8 +11,8 @@
  *
  * S2.1 delivered the job lifecycle, S2.2 the provider PORT, S2.3 the prompt
  * pipeline, S2.4 the workflow runtime, S2.5 usage metering, S2.6 retry and
- * recovery. Still no adapter, no routing, and nothing that calls a model — or
- * bills for one.
+ * recovery, S2.7 streaming. Still no adapter, no routing, no transport, and
+ * nothing that calls a model — or bills for one.
  *
  * The canonical request and response live in `@contentos/contracts`, because an
  * engine issuing an AIRequest is a feature package and two feature packages may
@@ -314,3 +314,52 @@ export {
 
 export type { RecoverOptions, RecoveryAction, RecoveryResult } from './retry/recovery.js';
 export { isRecoveryAction, recover, RECOVERY_ACTIONS, sameRecovery } from './retry/recovery.js';
+
+// Streaming — `08-ai-platform/provider-adapters.md` §Streaming.
+// The protocol, never the transport. A completed stream assembles the SAME
+// canonical AIResponse a non-streamed call returns.
+export type { StreamErrorCode, StreamStatus, StreamTransition } from './streaming/state.js';
+export {
+  assertTransitionAllowed as assertStreamTransitionAllowed,
+  canTransition as canStreamTransition,
+  INITIAL_STREAM_STATUS,
+  isStreamError,
+  isStreamStatus,
+  isStreamTransition,
+  isTerminalStreamStatus,
+  STREAM_ERROR_CODES,
+  STREAM_STATUSES,
+  STREAM_TRANSITION_ORIGINS,
+  STREAM_TRANSITIONS,
+  StreamError,
+  TERMINAL_STREAM_STATUSES,
+  transitionsFrom as streamTransitionsFrom,
+} from './streaming/state.js';
+
+export type { ChunkIssue, ChunkValidationResult, StreamChunk } from './streaming/chunk.js';
+export { isFinalChunk, validateChunk } from './streaming/chunk.js';
+
+export type {
+  AIStream,
+  OpenStreamOptions,
+  StreamCursor,
+  StreamEvent,
+  StreamEventKind,
+  StreamResult,
+  StreamState,
+} from './streaming/engine.js';
+export {
+  acceptChunk,
+  assembleResponse,
+  chunksAfter,
+  cursorFromToken,
+  cursorOf,
+  eventsOf,
+  failStream,
+  openStream,
+  parseResumeToken,
+  resultOf as streamResultOf,
+  resumeTokenFor,
+  startStream,
+  STREAM_EVENT_KINDS,
+} from './streaming/engine.js';
