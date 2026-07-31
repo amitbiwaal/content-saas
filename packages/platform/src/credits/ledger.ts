@@ -65,7 +65,20 @@ export type LedgerErrorCode =
   | 'WorkspaceNotAllowed'
   | 'ReasonRequired'
   | 'DuplicateIdempotencyKey'
-  | 'EntryNotFound';
+  | 'EntryNotFound'
+  // ── Added by the storage-agnostic ledger core ─────────────────────────────
+  // One taxonomy for one module: a second error type beside `LedgerError` would
+  // mean a caller catching two things to learn one fact.
+  /** A commercial reason that is not a ledger row. See `reason.ts`. */
+  | 'UnrepresentableReason'
+  /** Two entries claim one transaction id. See `aggregate.ts`. */
+  | 'DuplicateTransactionId'
+  /** A running balance that `NUMERIC(20,6)` could not hold. */
+  | 'BalanceOverflow'
+  /** A recorded balance that the entries do not add up to. */
+  | 'InconsistentBalance'
+  /** An entry that belongs to a different organization's ledger. */
+  | 'ForeignEntry';
 
 export class LedgerError extends Error {
   readonly code: LedgerErrorCode;

@@ -596,3 +596,52 @@ export {
   SETTINGS_STREAM,
   WORKSPACE_STREAM,
 } from './events/declarations.js';
+
+// ── S5.1 · Storage-agnostic ledger core ─────────────────────────────────────
+//
+// Additive to the Sprint 1 ledger, not a second one: the vocabulary bridge, the
+// pure balance fold, and a port for readers that have no database.
+
+export type { LedgerReason } from './credits/reason.js';
+export {
+  ENTRY_TYPE_TO_REASON,
+  entryTypeFor,
+  isLedgerReason,
+  isRecordableReason,
+  LEDGER_REASONS,
+  REASON_TO_ENTRY_TYPE,
+  reasonFor,
+  RECORDABLE_REASONS,
+} from './credits/reason.js';
+
+export type {
+  CalculateBalanceOptions,
+  CreditLedger,
+  LedgerBalance,
+  LedgerCurrency,
+  LedgerTransaction,
+} from './credits/aggregate.js';
+export {
+  assertBalanceConsistent,
+  calculateBalance,
+  groupTransactions,
+  LEDGER_CURRENCY,
+  MAX_SCALED_BALANCE,
+  reasonsOf,
+  toCreditLedger,
+} from './credits/aggregate.js';
+
+export type {
+  CreditLedgerRepository,
+  LedgerPosition,
+  LedgerQuery,
+  LedgerSlice,
+} from './credits/repository.js';
+
+export type { LoadWholeLedgerOptions, WholeLedger } from './credits/walk.js';
+export {
+  calculateLedgerBalance,
+  DEFAULT_LEDGER_PAGE_SIZE,
+  DEFAULT_MAX_LEDGER_ENTRIES,
+  loadWholeLedger,
+} from './credits/walk.js';
