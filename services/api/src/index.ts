@@ -70,9 +70,31 @@ export type {
   ApiResponse,
   ApiResult,
   ApiStreamResponse,
+  AuthenticatedRequest,
   ErrorBody,
 } from './ai/http.js';
-export { API_ERROR_MESSAGES, errorFor, isStreamResponse, ok, requestIdOf } from './ai/http.js';
+export { API_ERROR_MESSAGES, errorFor, isStreamResponse, ok } from './ai/http.js';
+
+// Authentication and authorization — the middleware every request passes
+// through before a controller sees it. Ports only; a composition root binds
+// them (`auth/ports.ts`).
+export type {
+  ApiKeyDirectory,
+  DirectoryOrganization,
+  DirectoryWorkspace,
+  IdentityDirectory,
+  TokenVerifier,
+} from './auth/ports.js';
+export type { AuthMiddleware, AuthMiddlewareOptions } from './auth/middleware.js';
+export {
+  ACCESSIBLE_WORKSPACE_STATUS,
+  BARRING_ORGANIZATION_STATUS,
+  createAuthMiddleware,
+  presentedCredential,
+  requestIdsOf,
+  WORKSPACE_HEADER,
+} from './auth/middleware.js';
+export { forbiddenResponse, unauthenticatedResponse, WWW_AUTHENTICATE } from './auth/responses.js';
 
 export type { ScopedRead, ValidationOutcome } from './ai/validation.js';
 export { readResumeToken, toGatewayRequest, toScopedRead } from './ai/validation.js';

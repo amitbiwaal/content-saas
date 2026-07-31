@@ -4,14 +4,29 @@
  * "A session establishes identity. It never carries authority."
  */
 
-export type AuthMethod =
-  | 'password'
-  | 'oauth'
-  | 'saml'
-  | 'oidc'
-  | 'api-key'
-  | 'service-token'
-  | 'recovery-code';
+/**
+ * The vocabulary, as data.
+ *
+ * Added so a verifier reading a `method` claim can CHECK it rather than cast
+ * it. A local copy in the verifier would be a second list that drifts from
+ * this one, and the drift would only show as an audit record naming a method
+ * that does not exist.
+ */
+export const AUTH_METHODS = [
+  'password',
+  'oauth',
+  'saml',
+  'oidc',
+  'api-key',
+  'service-token',
+  'recovery-code',
+] as const;
+
+export type AuthMethod = (typeof AUTH_METHODS)[number];
+
+export function isAuthMethod(value: unknown): value is AuthMethod {
+  return typeof value === 'string' && (AUTH_METHODS as readonly string[]).includes(value);
+}
 
 /**
  * NO permissions. NO roles. NO workspace grants. NO tenantId.

@@ -11,7 +11,8 @@
       "@contentos/events": ["./packages/events/src/index.ts"],
       "@contentos/observability": ["./packages/observability/src/index.ts"],
       "@contentos/ai": ["./packages/ai/src/index.ts"],
-      "@contentos/platform": ["./packages/platform/src/index.ts"]
+      "@contentos/platform": ["./packages/platform/src/index.ts"],
+      "@contentos/security": ["./packages/security/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
@@ -31,6 +32,9 @@
     },
     {
       "path": "../../packages/platform"
+    },
+    {
+      "path": "../../packages/security"
     }
   ]
 }

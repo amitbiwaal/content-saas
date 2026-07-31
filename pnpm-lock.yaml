@@ -122,6 +122,9 @@ importers:
       '@contentos/platform':
         specifier: workspace:*
         version: link:../../packages/platform
+      '@contentos/security':
+        specifier: workspace:*
+        version: link:../../packages/security
 
   workers/host:
     dependencies:

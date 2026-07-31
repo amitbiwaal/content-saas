@@ -51,8 +51,63 @@ export {
   slideIdleExpiry,
   stepUpRequired,
 } from './authn/subject.js';
+export { AUTH_METHODS, isAuthMethod } from './authn/subject.js';
 export type { AuthProviderAdapter, AuthenticatorOptions } from './authn/provider.js';
 export { createAuthenticator } from './authn/provider.js';
+
+// The Principal — identity RESOLVED for one request, in one workspace.
+// Distinct from `Subject`, which is what a credential proves: see the header
+// of `authn/principal.ts` for why permissions are never carried by a token.
+export type {
+  AuthContext,
+  AuthenticationFailure,
+  AuthenticationResult,
+  AuthorizationDenial,
+  AuthorizationResult,
+  Principal,
+} from './authn/principal.js';
+export {
+  AUTHENTICATION_FAILURES,
+  AUTHORIZATION_DENIALS,
+  freezeAuthContext,
+  freezePrincipal,
+  holds,
+  subjectOf,
+} from './authn/principal.js';
+
+// Bearer JWT verification. HS256 only, algorithm fixed by us not the token.
+export type { JwtClaims, JwtConfig, VerifyJwtOptions } from './authn/jwt.js';
+export {
+  DEFAULT_CLOCK_SKEW_SECONDS,
+  DEFAULT_JWT_METHOD,
+  JWT_ALGORITHM,
+  JWT_ENV_NAMES,
+  JwtConfigError,
+  jwtConfigFromEnv,
+  MIN_JWT_SECRET_BYTES,
+  verifyJwt,
+} from './authn/jwt.js';
+
+// API keys. Peppered HMAC rather than scrypt — a 256-bit random secret needs
+// no stretching, and stretching it would cost ~800 ms per request.
+export type {
+  ApiKeyRecord,
+  ApiKeyStatus,
+  ParsedApiKey,
+  VerifyApiKeyOptions,
+} from './authn/api-key.js';
+export {
+  API_KEY_ENV_NAMES,
+  API_KEY_PREFIX,
+  API_KEY_STATUSES,
+  ApiKeyConfigError,
+  apiKeyPepperFromEnv,
+  hashApiKeySecret,
+  MIN_API_KEY_PEPPER_BYTES,
+  MIN_API_KEY_SECRET_CHARS,
+  parseApiKey,
+  verifyApiKey,
+} from './authn/api-key.js';
 
 // MFA
 export type {

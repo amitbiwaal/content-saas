@@ -1,17 +1,65 @@
+import type { AuthContext, AuthenticationResult, AuthorizationResult } from '@contentos/security';
 import { describe, expect, it } from 'vitest';
 
+import type { AuthMiddleware } from '../auth/middleware.js';
 import type { AiControllers } from './controllers.js';
-import { ok, type ApiRequest, type ApiResponse, type ErrorBody } from './http.js';
+import {
+  ok,
+  type ApiRequest,
+  type ApiResponse,
+  type AuthenticatedRequest,
+  type ErrorBody,
+} from './http.js';
 import { AI_ROUTES, createAiRouter, matchPattern, resolveRoute } from './routes.js';
 
-const controllers = (): { readonly controllers: AiControllers; readonly seen: string[] } => {
+const ORG = '11111111-1111-4111-8111-111111111111';
+const WORKSPACE = '22222222-2222-4222-8222-222222222222';
+
+const AUTH: AuthContext = Object.freeze({
+  requestId: 'req-1',
+  correlationId: 'corr-1',
+  principal: Object.freeze({
+    subjectId: 'user-1',
+    kind: 'user' as const,
+    method: 'password' as const,
+    organizationId: ORG,
+    workspaceId: WORKSPACE,
+    roles: Object.freeze(['editor' as const]),
+    permissions: Object.freeze(['article:execute' as const]),
+    authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+    mfaSatisfied: true,
+    sessionId: null,
+  }),
+  organization: Object.freeze({ id: ORG, status: 'active' }),
+  workspace: Object.freeze({ id: WORKSPACE, status: 'active' }),
+});
+
+const AUTHENTICATED: AuthenticationResult = {
+  outcome: 'authenticated',
+  subject: {
+    subjectId: 'user-1',
+    kind: 'user',
+    authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+    method: 'password',
+    mfaSatisfied: true,
+    sessionId: null,
+  },
+  organizationId: null,
+  workspaceId: null,
+};
+
+interface Recorded {
+  readonly controllers: AiControllers;
+  readonly seen: string[];
+}
+
+const controllers = (): Recorded => {
   const seen: string[] = [];
   const record =
     (name: string) =>
-    // eslint-disable-next-line @typescript-eslint/require-await
-    async (request: ApiRequest): Promise<ApiResponse> => {
-      seen.push(`${name}:${JSON.stringify(request.params)}`);
-      return ok({ name });
+    (request: AuthenticatedRequest): Promise<ApiResponse> => {
+      seen.push(`${name}:${JSON.stringify(request.params)}:${request.auth.principal.workspaceId}`);
+      return Promise.resolve(ok({ name }));
     };
   return {
     seen,
@@ -26,12 +74,34 @@ const controllers = (): { readonly controllers: AiControllers; readonly seen: st
   };
 };
 
+interface AuthCalls {
+  readonly middleware: AuthMiddleware;
+  readonly permissions: string[];
+}
+
+function middlewareThat(
+  authentication: AuthenticationResult = AUTHENTICATED,
+  authorization: AuthorizationResult = { outcome: 'authorized', context: AUTH },
+): AuthCalls {
+  const permissions: string[] = [];
+  return {
+    permissions,
+    middleware: {
+      authenticate: () => Promise.resolve(authentication),
+      authorize: (_authenticated, _request, permission) => {
+        permissions.push(permission);
+        return Promise.resolve(authorization);
+      },
+    },
+  };
+}
+
 const request = (method: string, path: string): ApiRequest => ({
   method,
   path,
   params: {},
   query: {},
-  headers: { 'x-request-id': 'req-1' },
+  headers: { 'x-request-id': 'req-1', authorization: 'Bearer token' },
   body: null,
 });
 
@@ -52,6 +122,20 @@ describe('the route table', () => {
     for (const route of AI_ROUTES) {
       expect(typeof handlers[route.handler]).toBe('function');
     }
+  });
+
+  it('declares a permission for every route, so none can be reached unguarded', () => {
+    for (const route of AI_ROUTES) {
+      expect(route.permission, route.pattern).toMatch(/^[a-z]+:[a-z]+$/);
+    }
+  });
+
+  it('requires execute permission to spend on a model, and read to look', () => {
+    const required = Object.fromEntries(AI_ROUTES.map((r) => [r.pattern, r.permission]));
+    expect(required['/v1/ai/execute']).toBe('article:execute');
+    expect(required['/v1/ai/stream']).toBe('article:execute');
+    expect(required['/v1/ai/jobs/:id']).toBe('run:read');
+    expect(required['/v1/ai/workflows/:id']).toBe('run:read');
   });
 });
 
@@ -107,36 +191,81 @@ describe('resolving a route', () => {
 });
 
 describe('the router', () => {
-  it('calls the controller a route names, with the path parameters filled in', async () => {
+  it('calls the controller with the path parameters and the authenticated context', async () => {
     const { controllers: handlers, seen } = controllers();
-    const route = createAiRouter(handlers);
+    const route = createAiRouter(handlers, middlewareThat().middleware);
 
     await route(request('GET', '/v1/ai/jobs/job-9'));
-    expect(seen).toEqual(['job:{"id":"job-9"}']);
+    expect(seen).toEqual([`job:{"id":"job-9"}:${WORKSPACE}`]);
+  });
+
+  it('authorizes against the permission the route declares', async () => {
+    const auth = middlewareThat();
+    const route = createAiRouter(controllers().controllers, auth.middleware);
+
+    await route(request('POST', '/v1/ai/execute'));
+    await route(request('GET', '/v1/ai/jobs/j'));
+    expect(auth.permissions).toEqual(['article:execute', 'run:read']);
   });
 
   it('preserves parameters an adapter already extracted', async () => {
     const { controllers: handlers, seen } = controllers();
-    const route = createAiRouter(handlers);
+    const route = createAiRouter(handlers, middlewareThat().middleware);
 
     await route({ ...request('GET', '/v1/ai/health'), params: { fromAdapter: 'kept' } });
-    expect(seen).toEqual(['health:{"fromAdapter":"kept"}']);
+    expect(seen).toEqual([`health:{"fromAdapter":"kept"}:${WORKSPACE}`]);
   });
 
-  it('returns 404 for an unknown path', async () => {
-    const route = createAiRouter(controllers().controllers);
-    const response = (await route(request('GET', '/v1/ai/nope'))) as ApiResponse;
+  it('returns 401 before disclosing whether a path exists', async () => {
+    // Routing after authentication is the property: an unauthenticated caller
+    // learns nothing about the API shape, not even which URLs are real.
+    const auth = middlewareThat({ outcome: 'failed', reason: 'missing' });
+    const route = createAiRouter(controllers().controllers, auth.middleware);
 
-    expect(response.status).toBe(404);
+    const real = (await route(request('GET', '/v1/ai/health'))) as ApiResponse;
+    const fake = (await route(request('GET', '/v1/ai/nope'))) as ApiResponse;
+
+    expect(real.status).toBe(401);
+    expect(fake.status).toBe(401);
+    expect(real.body).toEqual(fake.body);
+  });
+
+  it('carries a challenge on every 401', async () => {
+    const auth = middlewareThat({ outcome: 'failed', reason: 'expired' });
+    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const response = (await route(request('GET', '/v1/ai/health'))) as ApiResponse;
+
+    expect(response.headers['www-authenticate']).toContain('Bearer');
     expect((response.body as ErrorBody).error).toMatchObject({
-      code: 'not_found',
+      code: 'unauthenticated',
       requestId: 'req-1',
     });
   });
 
+  it('returns 403 when authenticated but not permitted', async () => {
+    const auth = middlewareThat(AUTHENTICATED, {
+      outcome: 'denied',
+      reason: 'insufficient-permission',
+    });
+    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const response = (await route(request('POST', '/v1/ai/execute'))) as ApiResponse;
+
+    expect(response.status).toBe(403);
+    expect((response.body as ErrorBody).error.code).toBe('forbidden');
+  });
+
+  it('does not authorize a route that does not exist', async () => {
+    const auth = middlewareThat();
+    const route = createAiRouter(controllers().controllers, auth.middleware);
+
+    const response = (await route(request('GET', '/v1/ai/nope'))) as ApiResponse;
+    expect(response.status).toBe(404);
+    expect(auth.permissions).toEqual([]);
+  });
+
   it('returns 405 with Allow when the path is right and the verb is not', async () => {
     // Collapsing this into a 404 would send a client looking at its URL.
-    const route = createAiRouter(controllers().controllers);
+    const route = createAiRouter(controllers().controllers, middlewareThat().middleware);
     const response = (await route(request('DELETE', '/v1/ai/execute'))) as ApiResponse;
 
     expect(response.status).toBe(405);
@@ -144,12 +273,21 @@ describe('the router', () => {
     expect((response.body as ErrorBody).error.code).toBe('method_not_allowed');
   });
 
-  it('does not call any controller when it refuses', async () => {
+  it('does not call any controller when it refuses, at any stage', async () => {
     const { controllers: handlers, seen } = controllers();
-    const route = createAiRouter(handlers);
 
-    await route(request('GET', '/v1/ai/nope'));
-    await route(request('PUT', '/v1/ai/health'));
+    await createAiRouter(handlers, middlewareThat().middleware)(request('GET', '/v1/ai/nope'));
+    await createAiRouter(handlers, middlewareThat().middleware)(request('PUT', '/v1/ai/health'));
+    await createAiRouter(
+      handlers,
+      middlewareThat({ outcome: 'failed', reason: 'invalid' }).middleware,
+    )(request('GET', '/v1/ai/health'));
+    await createAiRouter(
+      handlers,
+      middlewareThat(AUTHENTICATED, { outcome: 'denied', reason: 'membership-required' })
+        .middleware,
+    )(request('POST', '/v1/ai/execute'));
+
     expect(seen).toEqual([]);
   });
 });

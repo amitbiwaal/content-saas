@@ -47,6 +47,7 @@ import {
   ProviderError,
   type ProviderErrorCode,
 } from '@contentos/contracts';
+import type { AuthContext, AuthenticationResult } from '@contentos/security';
 import {
   AI_ROUTES,
   API_ERROR_MESSAGES,
@@ -58,6 +59,7 @@ import {
   rejectionResponse,
   type ApiRequest,
   type ApiResponse,
+  type AuthMiddleware,
   type ErrorBody,
 } from '@contentos/api';
 import { describe, expect, it } from 'vitest';
@@ -220,7 +222,54 @@ function realProvider(): ModelProvider {
   });
 }
 
-function router(): ReturnType<typeof createAiRouter> {
+/**
+ * The authenticated context these requests arrive with.
+ *
+ * The middleware itself has its own conformance suite; here it is stubbed so
+ * that what is under test is the REST layer, and so that the tenancy reaching
+ * the Gateway is unambiguously the PRINCIPAL's rather than the body's.
+ */
+const CONTEXT: AuthContext = Object.freeze({
+  requestId: 'req-1',
+  correlationId: CORRELATION,
+  principal: Object.freeze({
+    subjectId: 'user-1',
+    kind: 'user' as const,
+    method: 'password' as const,
+    organizationId: ORG,
+    workspaceId: WS,
+    roles: Object.freeze(['editor' as const]),
+    permissions: Object.freeze(['article:execute' as const, 'run:read' as const]),
+    authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+    mfaSatisfied: true,
+    sessionId: null,
+  }),
+  organization: Object.freeze({ id: ORG, status: 'active' }),
+  workspace: Object.freeze({ id: WS, status: 'active' }),
+});
+
+const AUTHENTICATED: AuthenticationResult = {
+  outcome: 'authenticated',
+  subject: {
+    subjectId: 'user-1',
+    kind: 'user',
+    authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+    method: 'password',
+    mfaSatisfied: true,
+    sessionId: null,
+  },
+  organizationId: null,
+  workspaceId: null,
+};
+
+function authWith(context: AuthContext = CONTEXT): AuthMiddleware {
+  return {
+    authenticate: () => Promise.resolve(AUTHENTICATED),
+    authorize: () => Promise.resolve({ outcome: 'authorized', context }),
+  };
+}
+
+function router(auth: AuthMiddleware = authWith()): ReturnType<typeof createAiRouter> {
   const providers = createProviderRegistry();
   providers.register(realProvider());
   providers.seal();
@@ -234,6 +283,7 @@ function router(): ReturnType<typeof createAiRouter> {
       providers,
       version: '2.0.0-conformance',
     }),
+    auth,
   );
 }
 
@@ -254,9 +304,6 @@ const executeRequest = (path: string): ApiRequest => ({
     model: 'gpt-4o',
     template: { id: 'planning.outline' },
     variables: { topic: 'espresso' },
-    organizationId: ORG,
-    workspaceId: WS,
-    actorId: 'user-1',
   },
 });
 
@@ -374,14 +421,17 @@ describe('the whole path, composed', () => {
     });
   });
 
-  it('refuses a cross-tenant request as 403, and says nothing else', async () => {
-    // The workspace exists and belongs to another organization. What comes back
-    // must not distinguish that from a workspace that does not exist at all.
-    const request = executeRequest('/v1/ai/execute');
-    const response = (await router()({
-      ...request,
-      body: { ...(request.body as object), workspaceId: FOREIGN_WS },
-    })) as ApiResponse;
+  it('refuses a cross-tenant principal as 403, and says nothing else', async () => {
+    // A principal whose workspace belongs to another organization. What comes
+    // back must not distinguish that from a workspace that does not exist.
+    const crossTenant: AuthContext = {
+      ...CONTEXT,
+      principal: { ...CONTEXT.principal, workspaceId: FOREIGN_WS },
+      workspace: { id: FOREIGN_WS, status: 'active' },
+    };
+    const response = (await router(authWith(crossTenant))(
+      executeRequest('/v1/ai/execute'),
+    )) as ApiResponse;
 
     expect(response.status).toBe(403);
     expect((response.body as ErrorBody).error).toEqual({

@@ -47,12 +47,11 @@ import type { ValidationIssue } from '../pipeline/stages.js';
 import {
   errorFor,
   ok,
-  requestIdOf,
   type ApiErrorCode,
-  type ApiRequest,
   type ApiResponse,
   type ApiResult,
   type ApiStreamResponse,
+  type AuthenticatedRequest,
 } from './http.js';
 import type { AiDispatcher, JobReader, WorkflowReader } from './ports.js';
 import { readResumeToken, toGatewayRequest, toScopedRead } from './validation.js';
@@ -67,13 +66,21 @@ export interface AiControllerOptions {
   readonly version: string;
 }
 
+/**
+ * Every controller takes an AUTHENTICATED request.
+ *
+ * Not `ApiRequest`. A handler cannot be reached without the middleware having
+ * run, because the type it accepts does not exist until the middleware has
+ * produced one — which is what turns "controllers consume authenticated
+ * context only" from a rule into a property of the code.
+ */
 export interface AiControllers {
-  execute(request: ApiRequest): Promise<ApiResponse>;
-  stream(request: ApiRequest): Promise<ApiResult>;
-  job(request: ApiRequest): Promise<ApiResponse>;
-  workflow(request: ApiRequest): Promise<ApiResponse>;
-  listProviders(request: ApiRequest): Promise<ApiResponse>;
-  health(request: ApiRequest): Promise<ApiResponse>;
+  execute(request: AuthenticatedRequest): Promise<ApiResponse>;
+  stream(request: AuthenticatedRequest): Promise<ApiResult>;
+  job(request: AuthenticatedRequest): Promise<ApiResponse>;
+  workflow(request: AuthenticatedRequest): Promise<ApiResponse>;
+  listProviders(request: AuthenticatedRequest): Promise<ApiResponse>;
+  health(request: AuthenticatedRequest): Promise<ApiResponse>;
 }
 
 // ── Internal code → what a client sees ───────────────────────────────────────
@@ -266,7 +273,7 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
    * endpoints, and the only place either of them talks to the Gateway.
    */
   async function admit(
-    request: ApiRequest,
+    request: AuthenticatedRequest,
     requestId: string,
   ): Promise<{ admitted: AdmissionResult } | { refused: ApiResponse }> {
     const mapped = toGatewayRequest(request);
@@ -284,8 +291,8 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
   }
 
   return {
-    async execute(request: ApiRequest): Promise<ApiResponse> {
-      const requestId = requestIdOf(request);
+    async execute(request: AuthenticatedRequest): Promise<ApiResponse> {
+      const requestId = request.auth.requestId;
       const outcome = await admit(request, requestId);
       if ('refused' in outcome) return outcome.refused;
 
@@ -323,8 +330,8 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
      * on the same stream. A transport that tried to change the status at that
      * point would be writing a header into a body.
      */
-    async stream(request: ApiRequest): Promise<ApiResult> {
-      const requestId = requestIdOf(request);
+    async stream(request: AuthenticatedRequest): Promise<ApiResult> {
+      const requestId = request.auth.requestId;
 
       const resumeToken = readResumeToken(request);
       /* c8 ignore next */
@@ -393,8 +400,8 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
       return Object.freeze(streamed);
     },
 
-    async job(request: ApiRequest): Promise<ApiResponse> {
-      const requestId = requestIdOf(request);
+    async job(request: AuthenticatedRequest): Promise<ApiResponse> {
+      const requestId = request.auth.requestId;
       const scoped = toScopedRead(request, 'id');
       if (!scoped.ok) return invalid(scoped.issues, requestId);
 
@@ -403,8 +410,8 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
       return ok(jobView(found));
     },
 
-    async workflow(request: ApiRequest): Promise<ApiResponse> {
-      const requestId = requestIdOf(request);
+    async workflow(request: AuthenticatedRequest): Promise<ApiResponse> {
+      const requestId = request.auth.requestId;
       const scoped = toScopedRead(request, 'id');
       if (!scoped.ok) return invalid(scoped.issues, requestId);
 
@@ -413,7 +420,7 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
       return ok(workflowView(found));
     },
 
-    async listProviders(_request: ApiRequest): Promise<ApiResponse> {
+    async listProviders(_request: AuthenticatedRequest): Promise<ApiResponse> {
       const listed = await Promise.all(
         providers.list().map(async (provider) => {
           const models = modelsOf(provider);
@@ -438,7 +445,7 @@ export function createAiControllers(options: AiControllerOptions): AiControllers
      * what only the AI layer knows — whether the registry is sealed, and what
      * the providers say about themselves.
      */
-    async health(_request: ApiRequest): Promise<ApiResponse> {
+    async health(_request: AuthenticatedRequest): Promise<ApiResponse> {
       const listed = await Promise.all(
         providers.list().map(async (provider) => ({
           providerId: provider.providerId,

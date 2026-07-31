@@ -32,6 +32,8 @@
  * knowing which layer refused it.
  */
 
+import type { AuthContext } from '@contentos/security';
+
 import type { ValidationIssue } from '../pipeline/stages.js';
 
 /** What a transport adapter hands a controller. Framework-agnostic. */
@@ -45,6 +47,20 @@ export interface ApiRequest {
   readonly headers: Readonly<Record<string, string>>;
   /** Already parsed. Whether it parsed at all is the adapter's problem. */
   readonly body: unknown;
+}
+
+/**
+ * A request that has been authenticated and authorized.
+ *
+ * The `auth` field is the ONLY thing a controller reads for identity. Nothing
+ * downstream of the middleware touches `headers` for a credential, a request
+ * id, or a tenant — and because a controller's parameter is this type rather
+ * than `ApiRequest`, a handler that has not been through the middleware cannot
+ * be routed to at all. The constraint is carried by the type instead of by a
+ * convention someone has to remember.
+ */
+export interface AuthenticatedRequest extends ApiRequest {
+  readonly auth: AuthContext;
 }
 
 export interface ApiResponse {
@@ -93,6 +109,11 @@ export const API_ERROR_MESSAGES = {
   invalid_request: 'The request was not valid.',
   request_too_large: 'The request exceeded the maximum permitted size.',
   not_found: 'The requested resource does not exist.',
+  // One message for every way authentication can fail — missing, malformed,
+  // bad signature, expired, revoked. A caller learns that the credential did
+  // not work, and nothing about which check refused it, because the finer
+  // answer is an oracle for guessing credentials.
+  unauthenticated: 'Authentication is required.',
   forbidden: 'The request is not permitted.',
   unprocessable: 'The request was understood but could not be processed.',
   provider_unavailable: 'The upstream model provider is unavailable.',
@@ -142,27 +163,4 @@ export function errorFor(
     headers: Object.freeze({ ...JSON_HEADERS, ...headers }),
     body: Object.freeze(body),
   });
-}
-
-/**
- * The request id every error carries.
- *
- * Taken from the edge where one was supplied, and falling back to the
- * correlation id — which is the join already on every event, span, audit row
- * and cost record, so a support conversation that starts from an error response
- * lands where the evidence is. `'unknown'` only when a caller supplied neither.
- */
-export function requestIdOf(request: ApiRequest): string {
-  const header = request.headers['x-request-id'];
-  if (typeof header === 'string' && header.trim() !== '') return header.trim();
-
-  const correlation = request.headers['x-correlation-id'];
-  if (typeof correlation === 'string' && correlation.trim() !== '') return correlation.trim();
-
-  const body: unknown = request.body;
-  if (typeof body === 'object' && body !== null) {
-    const fromBody: unknown = (body as Record<string, unknown>)['correlationId'];
-    if (typeof fromBody === 'string' && fromBody.trim() !== '') return fromBody.trim();
-  }
-  return 'unknown';
 }

@@ -30,14 +30,22 @@ import type { AICapability, AIParameters } from '@contentos/contracts';
 import { isAICapability } from '@contentos/contracts';
 import type { GatewayRequest } from '@contentos/ai';
 
-import { exceedsNestingDepth, isUuid, type ValidationIssue } from '../pipeline/stages.js';
-import type { ApiRequest } from './http.js';
+import { exceedsNestingDepth, type ValidationIssue } from '../pipeline/stages.js';
+import type { ApiRequest, AuthenticatedRequest } from './http.js';
 
 export type ValidationOutcome<T> =
   | { readonly ok: true; readonly value: T }
   | { readonly ok: false; readonly issues: readonly ValidationIssue[] };
 
-/** Every key an execution body may carry. Anything else is rejected. */
+/**
+ * Every key an execution body may carry. Anything else is rejected.
+ *
+ * `organizationId`, `workspaceId`, `actorId` and `correlationId` USED TO BE
+ * here and deliberately are not any more. They come from the authenticated
+ * context, so a caller sending one now gets `UNKNOWN_FIELD` rather than having
+ * it quietly ignored — which is the difference between "you cannot assert your
+ * own tenancy" and "your assertion had no effect this time".
+ */
 const EXECUTION_KEYS = new Set([
   'taskType',
   'capability',
@@ -45,10 +53,6 @@ const EXECUTION_KEYS = new Set([
   'model',
   'template',
   'variables',
-  'organizationId',
-  'workspaceId',
-  'actorId',
-  'correlationId',
   'params',
   'timeoutMs',
   'featureFlag',
@@ -141,7 +145,7 @@ function readParameters(raw: unknown, issues: IssueBag): AIParameters | undefine
  * by it, and a client retrying must be able to resend an identical body.
  * `api-principles.md` requires it on every execution endpoint.
  */
-export function toGatewayRequest(request: ApiRequest): ValidationOutcome<GatewayRequest> {
+export function toGatewayRequest(request: AuthenticatedRequest): ValidationOutcome<GatewayRequest> {
   const issues = new IssueBag();
   const body: unknown = request.body;
 
@@ -186,25 +190,10 @@ export function toGatewayRequest(request: ApiRequest): ValidationOutcome<Gateway
   const variables = body['variables'];
   if (!isRecord(variables)) issues.add('body.variables', 'NOT_OBJECT');
 
-  // Identity is validated as a UUID before use, so a non-UUID never reaches a
-  // query parameter — injection through identifier fields as a category
-  // (`pipeline/stages.ts`).
-  for (const field of ['organizationId', 'workspaceId'] as const) {
-    const value = body[field];
-    if (!nonEmptyString(value)) {
-      issues.add(`body.${field}`, 'REQUIRED');
-    } else if (!isUuid(value)) {
-      issues.add(`body.${field}`, 'NOT_A_UUID');
-    }
-  }
-
-  // Null is meaningful and distinct from absent: platform-initiated work has no
-  // actor, and requiring one would make background execution impossible rather
-  // than more secure (`gateway/contracts.ts`).
-  const actorId = body['actorId'];
-  if (actorId !== undefined && actorId !== null && !nonEmptyString(actorId)) {
-    issues.add('body.actorId', 'NOT_A_STRING');
-  }
+  // Identity is NOT validated here any more, because it is not received here.
+  // The organization, the workspace and the actor come from the authenticated
+  // principal, which is a record the directory returned rather than a value a
+  // caller sent — so there is nothing left to check the shape of.
 
   const timeoutMs = body['timeoutMs'];
   if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || (timeoutMs as number) <= 0)) {
@@ -216,24 +205,9 @@ export function toGatewayRequest(request: ApiRequest): ValidationOutcome<Gateway
     issues.add('body.featureFlag', 'NOT_A_STRING');
   }
 
-  const bodyCorrelation = body['correlationId'];
-  if (bodyCorrelation !== undefined && !nonEmptyString(bodyCorrelation)) {
-    issues.add('body.correlationId', 'NOT_A_STRING');
-  }
-
   const params = readParameters(body['params'], issues);
 
   if (!issues.empty) return { ok: false, issues: issues.all };
-
-  // Derived, never generated: no clock and no random source, so the same HTTP
-  // request maps to the same GatewayRequest on every machine and a retry with
-  // the same key is recognisably the same attempt.
-  const header = request.headers['x-correlation-id'];
-  const correlationId = nonEmptyString(header)
-    ? header.trim()
-    : nonEmptyString(bodyCorrelation)
-      ? bodyCorrelation.trim()
-      : (idempotencyKey as string).trim();
 
   const templateRecord = template as Record<string, unknown>;
   const templateVersion = templateRecord['version'];
@@ -250,10 +224,14 @@ export function toGatewayRequest(request: ApiRequest): ValidationOutcome<Gateway
         ...(templateVersion === undefined ? {} : { version: templateVersion as number }),
       },
       variables: variables as Record<string, unknown>,
-      organizationId: body['organizationId'] as string,
-      workspaceId: body['workspaceId'] as string,
-      actorId: actorId === undefined || actorId === null ? null : (actorId as string).trim(),
-      correlationId,
+      // Every one of these comes from the middleware, not the wire. This is
+      // the line that stops a caller naming its own tenant: `workspaceId` is
+      // the workspace whose membership was just checked, and `actorId` is the
+      // subject whose credential was just verified.
+      organizationId: request.auth.principal.organizationId,
+      workspaceId: request.auth.principal.workspaceId,
+      actorId: request.auth.principal.subjectId,
+      correlationId: request.auth.correlationId,
       idempotencyKey: (idempotencyKey as string).trim(),
       ...(params === undefined ? {} : { params }),
       ...(timeoutMs === undefined ? {} : { timeoutMs: timeoutMs as number }),
@@ -265,37 +243,28 @@ export function toGatewayRequest(request: ApiRequest): ValidationOutcome<Gateway
 /**
  * A tenant-scoped read.
  *
- * The workspace comes from a header rather than the path because these two
- * routes are named by the increment as `/v1/ai/jobs/:id`, without a workspace
- * segment. Authentication is out of scope for this increment, so the header is
- * TRANSPORT INPUT and nothing more — it is checked for shape here and used to
- * scope the read, and when authentication arrives it becomes the authenticated
- * workspace instead. Nothing in this file treats it as proof of anything.
+ * The workspace comes from the authenticated principal. It used to come from
+ * an `x-workspace-id` header that nothing verified — the read was scoped by
+ * whatever the caller typed, and RLS was the only thing standing behind it.
+ * Now the header is consumed by the middleware, checked against membership,
+ * and reaches a controller only as a resolved principal.
  */
 export interface ScopedRead {
   readonly workspaceId: string;
   readonly id: string;
 }
 
-export function toScopedRead(request: ApiRequest, param: string): ValidationOutcome<ScopedRead> {
-  const issues = new IssueBag();
-
-  const workspaceId = request.headers['x-workspace-id'];
-  if (!nonEmptyString(workspaceId)) {
-    issues.add('headers.x-workspace-id', 'REQUIRED');
-  } else if (!isUuid(workspaceId)) {
-    issues.add('headers.x-workspace-id', 'NOT_A_UUID');
-  }
-
+export function toScopedRead(
+  request: AuthenticatedRequest,
+  param: string,
+): ValidationOutcome<ScopedRead> {
   const id = request.params[param];
   if (!nonEmptyString(id)) {
-    issues.add(`path.${param}`, 'REQUIRED');
+    return { ok: false, issues: Object.freeze([{ path: `path.${param}`, code: 'REQUIRED' }]) };
   }
-
-  if (!issues.empty) return { ok: false, issues: issues.all };
   return {
     ok: true,
-    value: { workspaceId: (workspaceId as string).trim(), id: (id as string).trim() },
+    value: { workspaceId: request.auth.principal.workspaceId, id: id.trim() },
   };
 }
 

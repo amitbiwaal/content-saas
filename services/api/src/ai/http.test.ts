@@ -1,24 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  API_ERROR_MESSAGES,
-  errorFor,
-  isStreamResponse,
-  ok,
-  requestIdOf,
-  type ApiRequest,
-  type ErrorBody,
-} from './http.js';
-
-const request = (overrides: Partial<ApiRequest> = {}): ApiRequest => ({
-  method: 'POST',
-  path: '/v1/ai/execute',
-  params: {},
-  query: {},
-  headers: {},
-  body: {},
-  ...overrides,
-});
+import { API_ERROR_MESSAGES, errorFor, isStreamResponse, ok, type ErrorBody } from './http.js';
 
 describe('the canonical error envelope', () => {
   it('carries code, message and requestId, and nothing else', () => {
@@ -86,30 +68,5 @@ describe('success responses', () => {
         lines: { async *[Symbol.asyncIterator]() {} },
       }),
     ).toBe(true);
-  });
-});
-
-describe('the request id', () => {
-  it('prefers the edge header', () => {
-    expect(requestIdOf(request({ headers: { 'x-request-id': 'edge-1' } }))).toBe('edge-1');
-  });
-
-  it('falls back to the correlation header', () => {
-    expect(requestIdOf(request({ headers: { 'x-correlation-id': 'corr-1' } }))).toBe('corr-1');
-  });
-
-  it("falls back to the body's correlation id", () => {
-    expect(requestIdOf(request({ body: { correlationId: 'corr-2' } }))).toBe('corr-2');
-  });
-
-  it('trims, so a header with whitespace does not become a different id', () => {
-    expect(requestIdOf(request({ headers: { 'x-request-id': '  edge-1  ' } }))).toBe('edge-1');
-  });
-
-  it("reports 'unknown' rather than inventing one", () => {
-    // Generating an id here would be non-deterministic and would not match
-    // anything in the logs, which is worse than admitting there is none.
-    expect(requestIdOf(request({ body: null }))).toBe('unknown');
-    expect(requestIdOf(request({ headers: { 'x-request-id': '   ' }, body: {} }))).toBe('unknown');
   });
 });

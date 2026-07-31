@@ -1,10 +1,34 @@
+import type { AuthContext } from '@contentos/security';
 import { describe, expect, it } from 'vitest';
 
-import type { ApiRequest } from './http.js';
+import type { ApiRequest, AuthenticatedRequest } from './http.js';
 import { readResumeToken, toGatewayRequest, toScopedRead } from './validation.js';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
 const WORKSPACE = '22222222-2222-4222-8222-222222222222';
+
+/**
+ * What the middleware produced. Every tenancy value below comes from HERE and
+ * from nowhere a caller can reach.
+ */
+const AUTH: AuthContext = Object.freeze({
+  requestId: 'req-1',
+  correlationId: 'corr-1',
+  principal: Object.freeze({
+    subjectId: 'user-1',
+    kind: 'user' as const,
+    method: 'password' as const,
+    organizationId: ORG,
+    workspaceId: WORKSPACE,
+    roles: Object.freeze(['editor' as const]),
+    permissions: Object.freeze(['article:execute' as const]),
+    authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+    mfaSatisfied: true,
+    sessionId: 'session-1',
+  }),
+  organization: Object.freeze({ id: ORG, status: 'active' }),
+  workspace: Object.freeze({ id: WORKSPACE, status: 'active' }),
+});
 
 const validBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   taskType: 'planning.outline',
@@ -13,37 +37,36 @@ const validBody = (overrides: Record<string, unknown> = {}): Record<string, unkn
   model: 'gpt-4o',
   template: { id: 'planning.outline', version: 7 },
   variables: { topic: 'kettles' },
-  organizationId: ORG,
-  workspaceId: WORKSPACE,
   ...overrides,
 });
 
 const request = (
   body: unknown,
   headers: Record<string, string> = { 'idempotency-key': 'idem-1' },
-): ApiRequest => ({
+  auth: AuthContext = AUTH,
+): AuthenticatedRequest => ({
   method: 'POST',
   path: '/v1/ai/execute',
   params: {},
   query: {},
   headers,
   body,
+  auth,
 });
 
 const pathsOf = (outcome: ReturnType<typeof toGatewayRequest>): readonly string[] =>
   outcome.ok ? [] : outcome.issues.map((issue) => issue.path);
 
 describe('mapping an execution request to a GatewayRequest', () => {
-  it('maps every field a caller sent', () => {
+  it('maps what a caller sent, and fills the rest from the principal', () => {
     const outcome = toGatewayRequest(
       request(
         validBody({
-          actorId: 'user-1',
           params: { temperature: 0.2, maxOutputTokens: 900, topP: 0.9, stopSequences: ['END'] },
           timeoutMs: 30_000,
           featureFlag: 'ai.outlines',
         }),
-        { 'idempotency-key': 'idem-1', 'x-correlation-id': 'corr-1' },
+        { 'idempotency-key': 'idem-1' },
       ),
     );
 
@@ -85,14 +108,9 @@ describe('mapping an execution request to a GatewayRequest', () => {
     expect('version' in outcome.value.templateRef).toBe(false);
   });
 
-  it('treats a missing actor as null, not as an error', () => {
-    // Platform-initiated work has no membership to check; requiring one would
-    // make background execution impossible rather than more secure.
+  it('takes the actor from the verified principal, never from the body', () => {
     const outcome = toGatewayRequest(request(validBody()));
-    expect(outcome.ok && outcome.value.actorId).toBeNull();
-
-    const explicit = toGatewayRequest(request(validBody({ actorId: null })));
-    expect(explicit.ok && explicit.value.actorId).toBeNull();
+    expect(outcome.ok && outcome.value.actorId).toBe('user-1');
   });
 });
 
@@ -116,18 +134,37 @@ describe('what transport validation refuses', () => {
     expect(paths).toEqual(expect.arrayContaining(['body.tenantId', 'body.role', 'body.credits']));
   });
 
-  it('refuses an identifier that is not a UUID', () => {
-    const paths = pathsOf(toGatewayRequest(request(validBody({ workspaceId: 'not-a-uuid' }))));
-    expect(paths).toEqual(['body.workspaceId']);
+  it('refuses a body that tries to name its own tenancy', () => {
+    // The whole point of the change: a caller cannot assert an organization, a
+    // workspace, an actor or a correlation id. Sending one is an error rather
+    // than something silently ignored, so a client that thought it was
+    // switching tenants finds out.
+    const paths = pathsOf(
+      toGatewayRequest(
+        request(
+          validBody({
+            organizationId: ORG,
+            workspaceId: WORKSPACE,
+            actorId: 'someone-else',
+            correlationId: 'mine',
+          }),
+        ),
+      ),
+    );
+    expect(paths).toEqual([
+      'body.organizationId',
+      'body.workspaceId',
+      'body.actorId',
+      'body.correlationId',
+    ]);
   });
 
-  it('reports a missing identifier as REQUIRED, not as a bad UUID', () => {
-    const body = validBody();
-    delete body['organizationId'];
-    const outcome = toGatewayRequest(request(body));
-    expect(outcome.ok).toBe(false);
-    if (outcome.ok) return;
-    expect(outcome.issues).toContainEqual({ path: 'body.organizationId', code: 'REQUIRED' });
+  it('cannot be made to act in another workspace by any body value', () => {
+    const outcome = toGatewayRequest(request(validBody()));
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.value.workspaceId).toBe(WORKSPACE);
+    expect(outcome.value.organizationId).toBe(ORG);
   });
 
   it('refuses a capability outside the fixed set', () => {
@@ -210,7 +247,7 @@ describe('what transport validation refuses', () => {
 
   it('reports every issue at once rather than the first', () => {
     const outcome = toGatewayRequest(
-      request({ taskType: '', capability: 'nope', workspaceId: 'x' }, {}),
+      request({ taskType: '', capability: 'nope', variables: 'no' }, {}),
     );
     expect(outcome.ok).toBe(false);
     if (outcome.ok) return;
@@ -235,67 +272,59 @@ describe('what transport validation deliberately does NOT check', () => {
 });
 
 describe('the correlation id', () => {
-  it('prefers the header', () => {
+  it('comes from the authenticated context, not from a header or a body', () => {
     const outcome = toGatewayRequest(
-      request(validBody({ correlationId: 'from-body' }), {
+      request(validBody(), {
         'idempotency-key': 'idem-1',
+        // Both ignored: the middleware already derived the correlation id, and
+        // a second derivation here would produce a request whose id does not
+        // match the one in the logs.
         'x-correlation-id': 'from-header',
       }),
     );
-    expect(outcome.ok && outcome.value.correlationId).toBe('from-header');
+    expect(outcome.ok && outcome.value.correlationId).toBe('corr-1');
   });
 
-  it('falls back to the body, then to the idempotency key', () => {
-    const fromBody = toGatewayRequest(request(validBody({ correlationId: 'from-body' })));
-    expect(fromBody.ok && fromBody.value.correlationId).toBe('from-body');
-
-    const derived = toGatewayRequest(request(validBody()));
-    expect(derived.ok && derived.value.correlationId).toBe('idem-1');
-  });
-
-  it('is derived, never generated — the same request maps to the same value', () => {
-    const once = toGatewayRequest(request(validBody()));
-    const twice = toGatewayRequest(request(validBody()));
-    expect(once).toEqual(twice);
+  it('is stable, so the same request maps to the same GatewayRequest', () => {
+    expect(toGatewayRequest(request(validBody()))).toEqual(toGatewayRequest(request(validBody())));
   });
 });
 
 describe('a tenant-scoped read', () => {
-  const read = (headers: Record<string, string>, params: Record<string, string>): ApiRequest => ({
+  const read = (
+    params: Record<string, string>,
+    auth: AuthContext = AUTH,
+  ): AuthenticatedRequest => ({
     method: 'GET',
     path: '/v1/ai/jobs/job-1',
     params,
     query: {},
-    headers,
+    // Deliberately present, and deliberately not read: the workspace a caller
+    // types is no longer what a read is scoped by.
+    headers: { 'x-workspace-id': '00000000-0000-4000-8000-000000000000' },
     body: null,
+    auth,
   });
 
-  it('takes the workspace from the header and the id from the path', () => {
-    expect(toScopedRead(read({ 'x-workspace-id': WORKSPACE }, { id: 'job-1' }), 'id')).toEqual({
+  it('scopes by the principal workspace, not by any header', () => {
+    expect(toScopedRead(read({ id: 'job-1' }), 'id')).toEqual({
       ok: true,
       value: { workspaceId: WORKSPACE, id: 'job-1' },
     });
   });
 
-  it('requires the workspace, because an unscoped read is a cross-tenant read', () => {
-    const outcome = toScopedRead(read({}, { id: 'job-1' }), 'id');
-    expect(outcome).toEqual({
-      ok: false,
-      issues: [{ path: 'headers.x-workspace-id', code: 'REQUIRED' }],
-    });
-  });
-
-  it('requires the workspace to be a UUID', () => {
-    const outcome = toScopedRead(read({ 'x-workspace-id': 'nope' }, { id: 'job-1' }), 'id');
-    expect(outcome).toEqual({
-      ok: false,
-      issues: [{ path: 'headers.x-workspace-id', code: 'NOT_A_UUID' }],
-    });
-  });
-
   it('requires the path parameter', () => {
-    const outcome = toScopedRead(read({ 'x-workspace-id': WORKSPACE }, {}), 'id');
-    expect(outcome).toEqual({ ok: false, issues: [{ path: 'path.id', code: 'REQUIRED' }] });
+    expect(toScopedRead(read({}), 'id')).toEqual({
+      ok: false,
+      issues: [{ path: 'path.id', code: 'REQUIRED' }],
+    });
+  });
+
+  it('trims the identifier', () => {
+    expect(toScopedRead(read({ id: '  job-2  ' }), 'id')).toMatchObject({
+      ok: true,
+      value: { id: 'job-2' },
+    });
   });
 });
 

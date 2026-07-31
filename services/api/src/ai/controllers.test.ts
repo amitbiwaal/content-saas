@@ -20,6 +20,7 @@ import {
   type ProviderErrorCode,
   type Usage,
 } from '@contentos/contracts';
+import type { AuthContext } from '@contentos/security';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -27,7 +28,12 @@ import {
   type AiControllerOptions,
   type AiControllers,
 } from './controllers.js';
-import { isStreamResponse, type ApiRequest, type ApiResponse, type ErrorBody } from './http.js';
+import {
+  isStreamResponse,
+  type ApiResponse,
+  type AuthenticatedRequest,
+  type ErrorBody,
+} from './http.js';
 import type { AiDispatcher, JobReader, WorkflowReader } from './ports.js';
 
 const ORG = '11111111-1111-4111-8111-111111111111';
@@ -96,6 +102,26 @@ const JOB: Job = {
   startedAt: '2026-07-30T00:00:01.000Z',
   completedAt: null,
 };
+
+const authFor = (workspaceId: string = WORKSPACE): AuthContext =>
+  Object.freeze({
+    requestId: 'req-1',
+    correlationId: 'corr-1',
+    principal: Object.freeze({
+      subjectId: 'user-1',
+      kind: 'user' as const,
+      method: 'password' as const,
+      organizationId: ORG,
+      workspaceId,
+      roles: Object.freeze(['editor' as const]),
+      permissions: Object.freeze(['article:execute' as const, 'run:read' as const]),
+      authenticatedAt: new Date('2026-07-31T00:00:00.000Z'),
+      mfaSatisfied: true,
+      sessionId: 'session-1',
+    }),
+    organization: Object.freeze({ id: ORG, status: 'active' }),
+    workspace: Object.freeze({ id: workspaceId, status: 'active' }),
+  });
 
 const admitted: GatewayResponse = {
   admitted: true,
@@ -207,13 +233,18 @@ function harness(overrides: Partial<AiControllerOptions> = {}): Harness {
   };
 }
 
-const post = (body: unknown, headers: Record<string, string> = {}): ApiRequest => ({
+const post = (
+  body: unknown,
+  headers: Record<string, string> = {},
+  auth: AuthContext = authFor(),
+): AuthenticatedRequest => ({
   method: 'POST',
   path: '/v1/ai/execute',
   params: {},
   query: {},
-  headers: { 'idempotency-key': 'idem-1', 'x-request-id': 'req-1', ...headers },
+  headers: { 'idempotency-key': 'idem-1', ...headers },
   body,
+  auth,
 });
 
 const validBody = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
@@ -223,20 +254,19 @@ const validBody = (overrides: Record<string, unknown> = {}): Record<string, unkn
   model: 'gpt-4o',
   template: { id: 'planning.outline', version: 7 },
   variables: { topic: 'kettles' },
-  organizationId: ORG,
-  workspaceId: WORKSPACE,
   ...overrides,
 });
 
-const get = (path: string, params: Record<string, string>, headers: Record<string, string> = {}) =>
+const get = (path: string, params: Record<string, string>, auth: AuthContext = authFor()) =>
   ({
     method: 'GET',
     path,
     params,
     query: {},
-    headers: { 'x-workspace-id': WORKSPACE, 'x-request-id': 'req-1', ...headers },
+    headers: {},
     body: null,
-  }) satisfies ApiRequest;
+    auth,
+  }) satisfies AuthenticatedRequest;
 
 const linesOf = async (result: { lines: AsyncIterable<string> }): Promise<string[]> => {
   const lines: string[] = [];
@@ -276,13 +306,13 @@ describe('POST /v1/ai/execute', () => {
 
   it('rejects a malformed body before the Gateway is reached', async () => {
     const { controllers, admitCalls } = harness();
-    const response = await controllers.execute(post(validBody({ workspaceId: 'nope' })));
+    const response = await controllers.execute(post(validBody({ capability: 'telepathy' })));
 
     expect(response.status).toBe(400);
     expect((response.body as ErrorBody).error).toMatchObject({
       code: 'invalid_request',
       requestId: 'req-1',
-      details: [{ path: 'body.workspaceId', code: 'NOT_A_UUID' }],
+      details: [{ path: 'body.capability', code: 'NOT_A_CAPABILITY' }],
     });
     expect(admitCalls).toEqual([]);
   });
@@ -581,9 +611,7 @@ describe('GET /v1/ai/jobs/:id', () => {
   it("returns 404 for another workspace's job, never 403", async () => {
     // A 403 would confirm the id exists, which is the disclosure the rule is for.
     const { controllers } = harness();
-    const response = await controllers.job(
-      get('/v1/ai/jobs/job-1', { id: 'job-1' }, { 'x-workspace-id': ORG }),
-    );
+    const response = await controllers.job(get('/v1/ai/jobs/job-1', { id: 'job-1' }, authFor(ORG)));
 
     expect(response.status).toBe(404);
     expect((response.body as ErrorBody).error.code).toBe('not_found');
@@ -594,16 +622,13 @@ describe('GET /v1/ai/jobs/:id', () => {
     expect((await controllers.job(get('/v1/ai/jobs/nope', { id: 'nope' }))).status).toBe(404);
   });
 
-  it('refuses a read that names no workspace', async () => {
+  it('refuses a read with no identifier in the path', async () => {
     const { controllers } = harness();
-    const response = await controllers.job({
-      ...get('/v1/ai/jobs/job-1', { id: 'job-1' }),
-      headers: {},
-    });
+    const response = await controllers.job({ ...get('/v1/ai/jobs/', {}), params: {} });
 
     expect(response.status).toBe(400);
     expect((response.body as ErrorBody).error.details).toEqual([
-      { path: 'headers.x-workspace-id', code: 'REQUIRED' },
+      { path: 'path.id', code: 'REQUIRED' },
     ]);
   });
 });
@@ -686,11 +711,11 @@ describe('GET /v1/ai/workflows/:id', () => {
     );
   });
 
-  it('refuses a read that names no workspace', async () => {
+  it('refuses a read with no identifier in the path', async () => {
     const { controllers } = harness();
     const response = await controllers.workflow({
-      ...get('/v1/ai/workflows/workflow-1', { id: 'workflow-1' }),
-      headers: {},
+      ...get('/v1/ai/workflows/', {}),
+      params: {},
     });
     expect(response.status).toBe(400);
   });

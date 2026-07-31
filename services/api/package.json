@@ -24,7 +24,8 @@
     "@contentos/contracts": "workspace:*",
     "@contentos/events": "workspace:*",
     "@contentos/observability": "workspace:*",
-    "@contentos/platform": "workspace:*"
+    "@contentos/platform": "workspace:*",
+    "@contentos/security": "workspace:*"
   },
   "devDependencies": {}
 }
