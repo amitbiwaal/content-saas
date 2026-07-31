@@ -104,6 +104,62 @@ const CREDENTIAL_PATTERNS: readonly CredentialPattern[] = [
   { pattern: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/ }, // JWT
   { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   { pattern: /[?&](X-Amz-Signature|Signature|token|sig)=[A-Za-z0-9%._-]{8,}/i }, // presigned URLs
+
+  // ── Added by S6.2 ─────────────────────────────────────────────────────────
+  /**
+   * Stripe keys.
+   *
+   * NOT covered by the `sk-` entry above: that one is OpenAI's hyphenated form,
+   * and every Stripe secret uses an UNDERSCORE — `sk_live_`, `rk_test_`,
+   * `whsec_`. One character apart, and a live secret key in a log is a full
+   * account compromise.
+   */
+  { pattern: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}/ },
+  { pattern: /\bwhsec_[A-Za-z0-9]{16,}/ },
+
+  /**
+   * A password in a named field — `password=…`, `"secret": "…"`, `apiKey: …`.
+   *
+   * The key survives and only the value is replaced, for the same reason the
+   * URI entry keeps its host: "which field carried a secret" is the diagnostic,
+   * and blanking the whole match would hide it.
+   *
+   * Quotes are matched but not captured, so a JSON fragment stays valid JSON
+   * after the scan rather than becoming unparseable for whoever reads it.
+   */
+  {
+    pattern:
+      /\b(password|passwd|secret|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|private[_-]?key)("?\s*[:=]\s*"?)([^"'\s,;&}]{6,})/i,
+    redact: (groups): string | null => {
+      const [key, separator, value] = groups;
+      if (key === undefined || separator === undefined || value === undefined) return null;
+      // Idempotent: re-scanning a sanitised message must not inflate a counter
+      // that is paged on at any non-zero value.
+      if (value === REDACTED) return null;
+      return `${key}${separator}${REDACTED}`;
+    },
+  },
+
+  /**
+   * A cookie header, whole.
+   *
+   * No part of a `Cookie:` value is worth keeping — a session cookie IS the
+   * session, so redacting selectively would leave the one that mattered.
+   */
+  { pattern: /\b(?:Set-)?Cookie:\s*[^\n\r]+/i },
+
+  /**
+   * A payment card number.
+   *
+   * `billing.md`: "No card data ever enters this system." This is the backstop
+   * for when it does anyway — a card number in a log is a PCI incident, and the
+   * scope reduction the platform relies on assumes this never happens.
+   *
+   * 13–19 digits with optional single spaces or hyphens, which is every major
+   * scheme's format. Luhn is deliberately NOT checked: a mistyped number is
+   * still card data, and a backstop that validated first would let it through.
+   */
+  { pattern: /\b(?:\d[ -]?){12,18}\d\b/ },
   {
     pattern: URI_CREDENTIALS,
     redact: (groups): string | null => {

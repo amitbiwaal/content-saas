@@ -211,3 +211,63 @@ export {
   secureToken,
   verifySecret,
 } from './crypto/primitives.js';
+
+// ── S6.2 · Operational logging & audit ──────────────────────────────────────
+//
+// The audit MODEL, WRITER, hash chain and `audit_log` table are canonical and
+// unchanged. What was missing:
+//
+//   - the read half. `audit.md` §Interfaces names an `AuditReader` with four
+//     methods and the code had none of them, so an investigation, an export and
+//     a chain verification would each grow their own SQL.
+//   - validation. `action` is specified "enumerated, never free text" and
+//     nothing enforced it; `reason` is specified mandatory and the type allowed
+//     an empty string.
+//   - redaction on the way IN. `reason` is free text in a queryable column of
+//     an append-only table kept for seven years; a token written there can
+//     never be removed.
+//   - the category. Every retention and review policy in `audit.md` is written
+//     per category and no field carried one.
+//
+// Operational logs stay in `@contentos/observability`. They are a different
+// stream with different retention, sampling and loss tolerance — `audit.md`
+// §"Three distinct streams" — and the two models never merge.
+
+export type {
+  AuditActor,
+  AuditCategory,
+  AuditEvent,
+  AuditMetadata,
+  AuditValidationCode,
+} from './audit/model.js';
+export {
+  assertValidAuditEvent,
+  assertValidMetadata,
+  assertValidTimestamp,
+  AUDIT_CATEGORIES,
+  AuditValidationError,
+  CATEGORY_METADATA_KEY,
+  categoryOf,
+  isAuditActionShape,
+  isAuditCategory,
+  MAX_METADATA_KEYS,
+  MAX_METADATA_VALUE_LENGTH,
+  toNewAuditRecord,
+} from './audit/model.js';
+
+export type {
+  AuditExportHandle,
+  AuditPage,
+  AuditPosition,
+  AuditQuery,
+  AuditReader,
+  ChainVerification,
+} from './audit/reader.js';
+
+export type {
+  AuditService,
+  AuditServiceOptions,
+  CredentialScanner,
+  ImmutableAuditRecord,
+} from './audit/service.js';
+export { createAuditService, freezeAuditRecord } from './audit/service.js';
