@@ -708,3 +708,63 @@ export {
 
 export type { LoadContentRunOptions, RunLoadCode, RunLoadResult } from './runs/load.js';
 export { isRunLoadCode, loadContentRun, RUN_LOAD_CODES } from './runs/load.js';
+
+// ── S4.5 · Content run history ──────────────────────────────────────────────
+
+export type {
+  ResolvedRunHistoryQuery,
+  RunHistoryFilter,
+  RunHistoryOrder,
+  RunHistoryQuery,
+  RunHistoryQueryValidation,
+} from './history/query.js';
+export {
+  canonicalFilter,
+  DEFAULT_RUN_HISTORY_LIMIT,
+  isRunHistoryOrder,
+  MAX_RUN_HISTORY_LIMIT,
+  RUN_HISTORY_ORDERS,
+  validateRunHistoryQuery,
+} from './history/query.js';
+
+export type { CursorDecoding, CursorErrorCode, RunHistoryCursor } from './history/cursor.js';
+export {
+  createCursor,
+  CURSOR_ERROR_CODES,
+  CURSOR_VERSION,
+  decodeCursor,
+  encodeCursor,
+  fingerprint,
+} from './history/cursor.js';
+
+export type {
+  ArtifactHistoryView,
+  RunFailureView,
+  RunHistoryView,
+  RunUsageSummary,
+} from './history/views.js';
+export {
+  PERSISTENCE_ONLY_FIELDS,
+  summariseUsage,
+  toArtifactHistoryView,
+  toRunHistoryView,
+} from './history/views.js';
+
+export type {
+  ContentRunHistoryStore,
+  StoredRunCriteria,
+  StoredRunPosition,
+  StoredRunSlice,
+} from './history/store.js';
+
+export type {
+  ArtifactHistoryResult,
+  RunHistoryCode,
+  RunHistoryOptions,
+  RunHistoryPage,
+  RunHistoryRefusal,
+  RunHistoryResult,
+  RunHistoryService,
+  RunLookupResult,
+} from './history/service.js';
+export { createRunHistory, isRunHistoryCode, RUN_HISTORY_CODES } from './history/service.js';
