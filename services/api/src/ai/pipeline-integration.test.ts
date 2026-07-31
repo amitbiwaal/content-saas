@@ -358,8 +358,8 @@ describe('idempotency, in the pipeline', () => {
     const streamed: ApiResult = {
       status: 200,
       headers: { 'content-type': 'application/x-ndjson' },
-      // eslint-disable-next-line @typescript-eslint/require-await
       lines: {
+        // eslint-disable-next-line @typescript-eslint/require-await
         async *[Symbol.asyncIterator]() {
           yield 'x\n';
         },
