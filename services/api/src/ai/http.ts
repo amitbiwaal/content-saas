@@ -118,6 +118,15 @@ export const API_ERROR_MESSAGES = {
   unprocessable: 'The request was understood but could not be processed.',
   provider_unavailable: 'The upstream model provider is unavailable.',
   rate_limited: 'Too many requests.',
+  // Two conflicts, one status, distinguished by CODE — which is where this
+  // platform tells clients to branch ("Clients branch on `code`, never on
+  // `message`"). One is a client bug, the other is a race the client should
+  // simply retry, and the remedies are nothing alike.
+  idempotency_conflict: 'That idempotency key was already used for a different request.',
+  idempotency_in_progress: 'A request with that idempotency key is still in progress.',
+  // The limiter or the idempotency store could not be reached. Distinct from
+  // `internal_error` because it is transient and carries `Retry-After`.
+  service_unavailable: 'The service is temporarily unable to handle the request.',
   timeout: 'The request timed out.',
   method_not_allowed: 'That method is not supported for this path.',
   internal_error: 'An unexpected error occurred.',

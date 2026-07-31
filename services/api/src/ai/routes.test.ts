@@ -2,6 +2,11 @@ import type { AuthContext, AuthenticationResult, AuthorizationResult } from '@co
 import { describe, expect, it } from 'vitest';
 
 import type { AuthMiddleware } from '../auth/middleware.js';
+import { createIdempotencyGuard, type IdempotencyGuard } from '../idempotency/guard.js';
+import { createRedisIdempotencyStore } from '../idempotency/store.js';
+import { createRateLimitEnforcer, type RateLimitEnforcer } from '../ratelimit/enforcer.js';
+import { createFakeRedis } from '../ratelimit/fake-redis.fixture.js';
+import { createRedisRateLimiter } from '../ratelimit/redis-limiter.js';
 import type { AiControllers } from './controllers.js';
 import {
   ok,
@@ -96,6 +101,39 @@ function middlewareThat(
   };
 }
 
+const START = Date.UTC(2026, 6, 31, 12, 0, 0);
+
+/** Everything a router needs, with the limiter and the guard wide open. */
+function collaborators(limit = 1000): {
+  rateLimit: RateLimitEnforcer;
+  idempotency: IdempotencyGuard;
+} {
+  const redis = createFakeRedis({ now: () => START });
+  return {
+    rateLimit: createRateLimitEnforcer({
+      limiter: createRedisRateLimiter({ redis }),
+      policies: [{ name: 'per-user', scope: 'user', limit, windowSeconds: 60 }],
+      now: () => new Date(START),
+    }),
+    idempotency: createIdempotencyGuard({ store: createRedisIdempotencyStore({ redis }) }),
+  };
+}
+
+function router(
+  handlers: AiControllers,
+  middleware: AuthMiddleware,
+  over: Partial<{ rateLimit: RateLimitEnforcer; idempotency: IdempotencyGuard }> = {},
+): (
+  r: ApiRequest,
+) => Promise<ApiResponse | { readonly headers: Readonly<Record<string, string>> }> {
+  return createAiRouter({
+    controllers: handlers,
+    auth: middleware,
+    ...collaborators(),
+    ...over,
+  }) as (r: ApiRequest) => Promise<ApiResponse>;
+}
+
 const request = (method: string, path: string): ApiRequest => ({
   method,
   path,
@@ -136,6 +174,16 @@ describe('the route table', () => {
     expect(required['/v1/ai/stream']).toBe('article:execute');
     expect(required['/v1/ai/jobs/:id']).toBe('run:read');
     expect(required['/v1/ai/workflows/:id']).toBe('run:read');
+  });
+
+  it('declares a rate-limit class for every route, as api-principles requires', () => {
+    const classes = Object.fromEntries(AI_ROUTES.map((r) => [r.pattern, r.rateLimitClass]));
+    // The two that buy model calls are `expensive`; the rest are reads.
+    expect(classes['/v1/ai/execute']).toBe('expensive');
+    expect(classes['/v1/ai/stream']).toBe('expensive');
+    for (const route of AI_ROUTES.filter((r) => r.method === 'GET')) {
+      expect(route.rateLimitClass, route.pattern).toBe('read');
+    }
   });
 });
 
@@ -193,7 +241,7 @@ describe('resolving a route', () => {
 describe('the router', () => {
   it('calls the controller with the path parameters and the authenticated context', async () => {
     const { controllers: handlers, seen } = controllers();
-    const route = createAiRouter(handlers, middlewareThat().middleware);
+    const route = router(handlers, middlewareThat().middleware);
 
     await route(request('GET', '/v1/ai/jobs/job-9'));
     expect(seen).toEqual([`job:{"id":"job-9"}:${WORKSPACE}`]);
@@ -201,7 +249,7 @@ describe('the router', () => {
 
   it('authorizes against the permission the route declares', async () => {
     const auth = middlewareThat();
-    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const route = router(controllers().controllers, auth.middleware);
 
     await route(request('POST', '/v1/ai/execute'));
     await route(request('GET', '/v1/ai/jobs/j'));
@@ -210,7 +258,7 @@ describe('the router', () => {
 
   it('preserves parameters an adapter already extracted', async () => {
     const { controllers: handlers, seen } = controllers();
-    const route = createAiRouter(handlers, middlewareThat().middleware);
+    const route = router(handlers, middlewareThat().middleware);
 
     await route({ ...request('GET', '/v1/ai/health'), params: { fromAdapter: 'kept' } });
     expect(seen).toEqual([`health:{"fromAdapter":"kept"}:${WORKSPACE}`]);
@@ -220,7 +268,7 @@ describe('the router', () => {
     // Routing after authentication is the property: an unauthenticated caller
     // learns nothing about the API shape, not even which URLs are real.
     const auth = middlewareThat({ outcome: 'failed', reason: 'missing' });
-    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const route = router(controllers().controllers, auth.middleware);
 
     const real = (await route(request('GET', '/v1/ai/health'))) as ApiResponse;
     const fake = (await route(request('GET', '/v1/ai/nope'))) as ApiResponse;
@@ -232,7 +280,7 @@ describe('the router', () => {
 
   it('carries a challenge on every 401', async () => {
     const auth = middlewareThat({ outcome: 'failed', reason: 'expired' });
-    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const route = router(controllers().controllers, auth.middleware);
     const response = (await route(request('GET', '/v1/ai/health'))) as ApiResponse;
 
     expect(response.headers['www-authenticate']).toContain('Bearer');
@@ -247,7 +295,7 @@ describe('the router', () => {
       outcome: 'denied',
       reason: 'insufficient-permission',
     });
-    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const route = router(controllers().controllers, auth.middleware);
     const response = (await route(request('POST', '/v1/ai/execute'))) as ApiResponse;
 
     expect(response.status).toBe(403);
@@ -256,7 +304,7 @@ describe('the router', () => {
 
   it('does not authorize a route that does not exist', async () => {
     const auth = middlewareThat();
-    const route = createAiRouter(controllers().controllers, auth.middleware);
+    const route = router(controllers().controllers, auth.middleware);
 
     const response = (await route(request('GET', '/v1/ai/nope'))) as ApiResponse;
     expect(response.status).toBe(404);
@@ -265,7 +313,7 @@ describe('the router', () => {
 
   it('returns 405 with Allow when the path is right and the verb is not', async () => {
     // Collapsing this into a 404 would send a client looking at its URL.
-    const route = createAiRouter(controllers().controllers, middlewareThat().middleware);
+    const route = router(controllers().controllers, middlewareThat().middleware);
     const response = (await route(request('DELETE', '/v1/ai/execute'))) as ApiResponse;
 
     expect(response.status).toBe(405);
@@ -276,13 +324,13 @@ describe('the router', () => {
   it('does not call any controller when it refuses, at any stage', async () => {
     const { controllers: handlers, seen } = controllers();
 
-    await createAiRouter(handlers, middlewareThat().middleware)(request('GET', '/v1/ai/nope'));
-    await createAiRouter(handlers, middlewareThat().middleware)(request('PUT', '/v1/ai/health'));
-    await createAiRouter(
+    await router(handlers, middlewareThat().middleware)(request('GET', '/v1/ai/nope'));
+    await router(handlers, middlewareThat().middleware)(request('PUT', '/v1/ai/health'));
+    await router(
       handlers,
       middlewareThat({ outcome: 'failed', reason: 'invalid' }).middleware,
     )(request('GET', '/v1/ai/health'));
-    await createAiRouter(
+    await router(
       handlers,
       middlewareThat(AUTHENTICATED, { outcome: 'denied', reason: 'membership-required' })
         .middleware,

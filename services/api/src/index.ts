@@ -107,7 +107,7 @@ export { createProviderDispatcher } from './ai/dispatch.js';
 export type { AiControllerOptions, AiControllers } from './ai/controllers.js';
 export { createAiControllers, failureResponse, rejectionResponse } from './ai/controllers.js';
 
-export type { AiRoute, RouteMatch } from './ai/routes.js';
+export type { AiRoute, AiRouterOptions, RouteMatch } from './ai/routes.js';
 export {
   AI_BASE_PATH,
   AI_ROUTES,
@@ -115,3 +115,79 @@ export {
   matchPattern,
   resolveRoute,
 } from './ai/routes.js';
+
+// Rate limiting — the sliding window, its policies, and their enforcement.
+// Implements the FROZEN `RateLimiter` port from `pipeline/stages.ts`; there is
+// no second limiter interface.
+export type {
+  RateLimitClass,
+  RateLimitPolicy,
+  RateLimitScope,
+  RateLimitSubject,
+} from './ratelimit/policy.js';
+export {
+  createPolicySet,
+  isRateLimitScope,
+  policiesFor,
+  RATE_LIMIT_CLASSES,
+  RATE_LIMIT_NAMESPACE,
+  RATE_LIMIT_SCOPES,
+  rateLimitKey,
+  RateLimitConfigError,
+} from './ratelimit/policy.js';
+
+export type { RedisCommands, RedisRateLimiterOptions } from './ratelimit/redis-limiter.js';
+export {
+  createRedisRateLimiter,
+  RateLimiterUnavailableError,
+  SLIDING_WINDOW_SCRIPT,
+} from './ratelimit/redis-limiter.js';
+
+export type {
+  RateLimitEnforcer,
+  RateLimitEnforcerOptions,
+  RateLimitOutcome,
+  StoreFailureMode,
+} from './ratelimit/enforcer.js';
+export {
+  createRateLimitEnforcer,
+  DEFAULT_STORE_FAILURE_MODE,
+  rateLimitHeaders,
+  STORE_FAILURE_MODES,
+} from './ratelimit/enforcer.js';
+
+// Idempotency — fingerprint, store, and the exactly-once claim.
+export type { FingerprintInput } from './idempotency/fingerprint.js';
+export {
+  canonicalize,
+  FINGERPRINT_EXCLUDED_FIELDS,
+  fingerprintOf,
+} from './idempotency/fingerprint.js';
+
+export type {
+  BeginResult,
+  IdempotencyRecord,
+  IdempotencyStore,
+  RedisIdempotencyStoreOptions,
+  StoredResponse,
+} from './idempotency/store.js';
+export {
+  CLAIM_SCRIPT,
+  COMPLETE_SCRIPT,
+  createRedisIdempotencyStore,
+  IDEMPOTENCY_NAMESPACE,
+  IDEMPOTENCY_TTL_SECONDS,
+  idempotencyKeyFor,
+  IdempotencyStoreUnavailableError,
+  RELEASE_SCRIPT,
+} from './idempotency/store.js';
+
+export type { BeginInput, IdempotencyGuard, IdempotencyOutcome } from './idempotency/guard.js';
+export {
+  CONFLICT_STATUS,
+  createIdempotencyGuard,
+  IDEMPOTENCY_KEY_HEADER,
+  IDEMPOTENT_REPLAY_HEADER,
+  PENDING_RETRY_AFTER_SECONDS,
+  withIdempotencyKey,
+} from './idempotency/guard.js';

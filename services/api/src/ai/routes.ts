@@ -8,7 +8,7 @@
  * sending a request. An endpoint that forgot its permission would not compile.
  *
  * ── The order is a security property ────────────────────────────────────────
- *   authenticate → resolve route → authorize → handler
+ *   authenticate → route → authorize → rate limit → idempotency → handler
  *
  * Authentication comes BEFORE routing, which is what `pipeline/order.ts`
  * already requires of validation and for the same reason: "validation errors
@@ -16,6 +16,19 @@
  * shape." A 404 issued before a credential is checked tells anyone which paths
  * exist. Authorization comes after routing because the permission to require is
  * a property of the route.
+ *
+ * RATE LIMITING RUNS AFTER AUTHORIZATION, a deliberate departure from where
+ * `pipeline/order.ts` places `rate-limit-post-auth`. Three of the five policies
+ * count against a workspace or an organization, and until authorization has run
+ * those are values a CALLER SENT. Counting against an unverified workspace id
+ * would let anyone exhaust another tenant's quota by naming it in a header — a
+ * denial of service handed out for free. After authorization they are records
+ * the directory returned. The pre-auth IP limit that `order.ts` is really about
+ * is `rateLimitPreAuth`, which is unchanged and still runs first.
+ *
+ * IDEMPOTENCY RUNS LAST, immediately before the handler, so a request that was
+ * going to be refused anyway never consumes a key. A 429 that burned a client's
+ * idempotency key would make the retry it is asking for impossible.
  *
  * ── 405 and 404 are different answers ───────────────────────────────────────
  * A path that exists but was reached with the wrong method returns 405 and an
@@ -28,7 +41,20 @@ import type { Permission } from '@contentos/security';
 import type { AuthMiddleware } from '../auth/middleware.js';
 import { requestIdsOf } from '../auth/middleware.js';
 import { forbiddenResponse, unauthenticatedResponse } from '../auth/responses.js';
-import { errorFor, type ApiRequest, type ApiResult, type AuthenticatedRequest } from './http.js';
+import {
+  IDEMPOTENCY_KEY_HEADER,
+  withIdempotencyKey,
+  type IdempotencyGuard,
+} from '../idempotency/guard.js';
+import type { RateLimitEnforcer } from '../ratelimit/enforcer.js';
+import type { RateLimitClass, RateLimitSubject } from '../ratelimit/policy.js';
+import {
+  errorFor,
+  isStreamResponse,
+  type ApiRequest,
+  type ApiResult,
+  type AuthenticatedRequest,
+} from './http.js';
 import type { AiControllers } from './controllers.js';
 
 export const AI_BASE_PATH = '/v1/ai';
@@ -40,6 +66,13 @@ export interface AiRoute {
   readonly handler: keyof AiControllers;
   /** What a caller must hold. Checked by the middleware, never by the handler. */
   readonly permission: Permission;
+  /**
+   * The rate-limit class, which `06-api/api-principles.md` requires every
+   * endpoint to declare. Not optional, for the same reason `permission` is not:
+   * an endpoint that forgot one would be limited by whatever policy happened to
+   * apply to everything.
+   */
+  readonly rateLimitClass: RateLimitClass;
 }
 
 /**
@@ -63,22 +96,45 @@ export const AI_ROUTES: readonly AiRoute[] = Object.freeze([
     pattern: '/v1/ai/execute',
     handler: 'execute',
     permission: 'article:execute',
+    // `expensive`, which api-principles.md defines as "pipeline runs, exports,
+    // bulk operations". These two buy model calls; nothing else here spends.
+    rateLimitClass: 'expensive',
   },
-  { method: 'POST', pattern: '/v1/ai/stream', handler: 'stream', permission: 'article:execute' },
-  { method: 'GET', pattern: '/v1/ai/jobs/:id', handler: 'job', permission: 'run:read' },
+  {
+    method: 'POST',
+    pattern: '/v1/ai/stream',
+    handler: 'stream',
+    permission: 'article:execute',
+    rateLimitClass: 'expensive',
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/ai/jobs/:id',
+    handler: 'job',
+    permission: 'run:read',
+    rateLimitClass: 'read',
+  },
   {
     method: 'GET',
     pattern: '/v1/ai/workflows/:id',
     handler: 'workflow',
     permission: 'run:read',
+    rateLimitClass: 'read',
   },
   {
     method: 'GET',
     pattern: '/v1/ai/providers',
     handler: 'listProviders',
     permission: 'workspace:read',
+    rateLimitClass: 'read',
   },
-  { method: 'GET', pattern: '/v1/ai/health', handler: 'health', permission: 'workspace:read' },
+  {
+    method: 'GET',
+    pattern: '/v1/ai/health',
+    handler: 'health',
+    permission: 'workspace:read',
+    rateLimitClass: 'read',
+  },
 ]);
 
 const segmentsOf = (path: string): readonly string[] =>
@@ -139,16 +195,30 @@ export function resolveRoute(
 /**
  * The single entry point a transport adapter binds to.
  *
- * It authenticates, resolves a route, authorizes, and calls the controller with
- * an `AuthenticatedRequest`. It holds no endpoint-specific behaviour, which is
- * what keeps adding a seventh endpoint a change to the table above and nothing
- * else — including a change to what that endpoint requires, which is now
- * impossible to forget because `permission` is not optional.
+ * It authenticates, resolves a route, authorizes, limits, deduplicates, and
+ * calls the controller with an `AuthenticatedRequest`. It holds no
+ * endpoint-specific behaviour, which is what keeps adding a seventh endpoint a
+ * change to the table above and nothing else — including what that endpoint
+ * requires and what class it is limited under, neither of which is optional.
  */
+export interface AiRouterOptions {
+  readonly controllers: AiControllers;
+  readonly auth: AuthMiddleware;
+  readonly rateLimit: RateLimitEnforcer;
+  readonly idempotency: IdempotencyGuard;
+}
+
+/** Attach headers to whichever shape the controller returned. */
+function withHeaders(result: ApiResult, headers: Readonly<Record<string, string>>): ApiResult {
+  if (Object.keys(headers).length === 0) return result;
+  return Object.freeze({ ...result, headers: Object.freeze({ ...result.headers, ...headers }) });
+}
+
 export function createAiRouter(
-  controllers: AiControllers,
-  auth: AuthMiddleware,
+  options: AiRouterOptions,
 ): (request: ApiRequest) => Promise<ApiResult> {
+  const { controllers, auth, rateLimit, idempotency } = options;
+
   return async function route(request: ApiRequest): Promise<ApiResult> {
     const { requestId } = requestIdsOf(request);
 
@@ -172,12 +242,80 @@ export function createAiRouter(
     const decision = await auth.authorize(authenticated, request, resolved.route.permission);
     if (decision.outcome === 'denied') return forbiddenResponse(decision.reason, requestId);
 
-    // 4 · Hand the controller a request it cannot have obtained any other way.
+    // 4 · Rate limit, now that the workspace and organization are RESOLVED.
+    const subject: RateLimitSubject = {
+      principal: decision.context.principal,
+      apiKeyId: authenticated.subject.kind === 'api-key' ? authenticated.subject.subjectId : null,
+      // The left-most entry is the client; the rest were added by proxies. An
+      // empty string when nothing set it, which is a bucket of its own rather
+      // than a hole in the policy.
+      ipAddress: request.headers['x-forwarded-for']?.split(',')[0]?.trim() ?? '',
+    };
+    const limited = await rateLimit.check(subject, resolved.route.rateLimitClass);
+    if (limited.outcome === 'unavailable') {
+      return errorFor(503, 'service_unavailable', requestId, undefined, { 'retry-after': '1' });
+    }
+    if (limited.outcome === 'limited') {
+      // The policy name is not returned. Which dimension bound is operational
+      // detail, and disclosing it would let a caller probe for the loosest one.
+      return errorFor(429, 'rate_limited', requestId, undefined, {
+        ...limited.headers,
+        'retry-after': String(limited.retryAfterSeconds),
+      });
+    }
+
+    // 5 · Idempotency, last, so a refused request never consumes a key.
+    const clientKey = request.headers[IDEMPOTENCY_KEY_HEADER]?.trim();
+    const claim = await idempotency.begin({
+      principal: decision.context.principal,
+      method: request.method,
+      // The PATTERN, not the URL: the scope is the endpoint, so two ids on one
+      // endpoint cannot share a stored response.
+      endpoint: resolved.route.pattern,
+      body: request.body,
+      clientKey: clientKey === undefined || clientKey === '' ? null : clientKey,
+      requestId,
+    });
+    if (claim.outcome === 'replay' || claim.outcome === 'refused') {
+      // Limit headers ride along: a client pacing itself needs them on every
+      // response, including the ones it did not want.
+      return withHeaders(claim.response, limited.headers);
+    }
+
+    // 6 · Hand the controller a request it cannot have obtained any other way.
     const authenticatedRequest: AuthenticatedRequest = {
       ...request,
       params: { ...request.params, ...resolved.params },
       auth: decision.context,
     };
-    return controllers[resolved.route.handler](authenticatedRequest);
+
+    if (claim.outcome === 'skipped') {
+      const result = await controllers[resolved.route.handler](authenticatedRequest);
+      return withHeaders(result, limited.headers);
+    }
+
+    let result: ApiResult;
+    try {
+      result = await controllers[resolved.route.handler](authenticatedRequest);
+    } catch (failure) {
+      // A claim must not outlive a request that produced nothing, or a client
+      // retrying a transient failure is refused for the whole 24-hour window.
+      await idempotency.release(claim.storageKey);
+      throw failure;
+    }
+
+    if (isStreamResponse(result)) {
+      // A stream is not replayable without buffering the whole of it, and the
+      // streaming framework already has the right mechanism for a dropped
+      // connection: the resume cursor from S2.7. The claim is released, so a
+      // duplicate arriving WHILE this one is in flight is still refused — the
+      // property that matters — and a genuine retry afterwards may run.
+      await idempotency.release(claim.storageKey);
+      return withHeaders(result, limited.headers);
+    }
+
+    const withKey = withIdempotencyKey(result, claim.clientKey);
+    await idempotency.complete(claim.storageKey, claim.fingerprint, withKey);
+    return withHeaders(withKey, limited.headers);
   };
 }

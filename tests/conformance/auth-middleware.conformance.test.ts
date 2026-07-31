@@ -63,6 +63,13 @@ import {
   type JwtConfig,
   type RoleBinding,
 } from '@contentos/security';
+import {
+  createIdempotencyGuard,
+  createRateLimitEnforcer,
+  createRedisIdempotencyStore,
+  createRedisRateLimiter,
+  type RedisCommands,
+} from '@contentos/api';
 import { describe, expect, it } from 'vitest';
 
 const ORG = '018f7a1e-0000-7000-8000-0000000000aa';
@@ -246,7 +253,52 @@ function compose(overrides: DirectoryOverrides = {}): Composed {
     version: '2.0.0-conformance',
   });
 
-  return { route: createAiRouter(controllers, auth), admitted };
+  return {
+    route: createAiRouter({ controllers, auth, ...pipelineCollaborators() }),
+    admitted,
+  };
+}
+
+/**
+ * A permissive limiter and a working claim store.
+ *
+ * Both are exercised in depth by their own suites; here they exist so the
+ * router can be built at all, and so these suites keep asserting what they are
+ * about rather than turning into rate-limit tests.
+ */
+function pipelineCollaborators(): {
+  rateLimit: ReturnType<typeof createRateLimitEnforcer>;
+  idempotency: ReturnType<typeof createIdempotencyGuard>;
+} {
+  const strings = new Map<string, string>();
+  const redis: RedisCommands = {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    async eval(script, keys, args): Promise<unknown> {
+      const key = keys[0] as string;
+      if (script.includes('ZREMRANGEBYSCORE')) return [1, Number(args[0]) - 1, Number(args[1])];
+      if (script.includes('record.fingerprint ~= ARGV[2]')) {
+        strings.set(key, String(args[0]));
+        return 1;
+      }
+      if (script.includes("redis.call('DEL', KEYS[1])")) {
+        strings.delete(key);
+        return 1;
+      }
+      const existing = strings.get(key);
+      if (existing !== undefined) return [0, existing];
+      strings.set(key, String(args[0]));
+      return [1, ''];
+    },
+  };
+
+  return {
+    rateLimit: createRateLimitEnforcer({
+      limiter: createRedisRateLimiter({ redis }),
+      policies: [{ name: 'generous', scope: 'user', limit: 1_000_000, windowSeconds: 60 }],
+      now: () => new Date(0),
+    }),
+    idempotency: createIdempotencyGuard({ store: createRedisIdempotencyStore({ redis }) }),
+  };
 }
 
 const executeRequest = (headers: Record<string, string>): ApiRequest => ({
