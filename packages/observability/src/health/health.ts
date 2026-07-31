@@ -9,7 +9,22 @@
  * (Sprint 0, Task 4) — observability defines no API layer.
  */
 
-export type HealthStatus = 'healthy' | 'degraded' | 'unhealthy';
+/** Ordered worst-last, as `worst()` below reads them. */
+export const HEALTH_STATUSES = ['healthy', 'degraded', 'unhealthy'] as const;
+
+export type HealthStatus = (typeof HEALTH_STATUSES)[number];
+
+/**
+ * Is this a health state this build knows?
+ *
+ * A check is often a function somebody else wrote, and a report read back over
+ * a wire is untyped by the time it arrives. A malformed state that flowed
+ * through `worst()` would be treated as healthy — it is neither `unhealthy` nor
+ * `degraded` — and an outage would read green.
+ */
+export function isHealthStatus(value: unknown): value is HealthStatus {
+  return typeof value === 'string' && (HEALTH_STATUSES as readonly string[]).includes(value);
+}
 
 /**
  * LOCAL dependencies only — database, Redis. Checked by readiness.

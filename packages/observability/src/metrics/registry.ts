@@ -9,7 +9,13 @@
 
 import { assertLabelsAllowed, labelKey, type MetricLabels } from './labels.js';
 
-export type MetricKind = 'counter' | 'gauge' | 'histogram';
+export const METRIC_KINDS = ['counter', 'gauge', 'histogram'] as const;
+
+export type MetricKind = (typeof METRIC_KINDS)[number];
+
+export function isMetricKind(value: unknown): value is MetricKind {
+  return typeof value === 'string' && (METRIC_KINDS as readonly string[]).includes(value);
+}
 
 export interface MetricDefinition {
   readonly name: string;
@@ -157,17 +163,61 @@ class MetricInstrument {
  * The registry. Every metric is declared before use, so an exporter and a
  * dashboard can know the full catalogue without waiting for a first sample.
  */
+/**
+ * Two declarations of one metric name must describe the same metric.
+ *
+ * Declaring the same metric twice is the ordinary idiom — two modules both want
+ * the same counter, and both should get it. Declaring it twice DIFFERENTLY is
+ * not: the second caller silently receives the first one's instrument, so its
+ * extra label is dropped from every observation it makes and the series it
+ * thinks it is writing does not exist.
+ *
+ * The kind conflict was already refused. This adds the two that were not:
+ * disagreeing label sets, and disagreeing histogram buckets — a bucket
+ * mismatch makes two callers' percentiles incomparable while looking fine.
+ *
+ * `help` is deliberately NOT compared. It is prose for an operator; refusing a
+ * redeclaration over a reworded sentence would be a startup crash over a typo.
+ */
+export function assertCompatibleDefinition(
+  existing: MetricDefinition,
+  incoming: MetricDefinition,
+): void {
+  if (existing.kind !== incoming.kind) {
+    throw new Error(
+      `Metric '${incoming.name}' is already registered as a ${existing.kind}; cannot re-register as a ${incoming.kind}.`,
+    );
+  }
+
+  const before = [...existing.labelNames].sort();
+  const after = [...incoming.labelNames].sort();
+  if (before.length !== after.length || before.some((name, index) => name !== after[index])) {
+    throw new Error(
+      `Metric '${incoming.name}' is already registered with labels [${before.join(', ')}]; cannot re-register with [${after.join(', ')}]. The second declaration would silently observe against the first one's labels.`,
+    );
+  }
+
+  const bucketsBefore = existing.buckets;
+  const bucketsAfter = incoming.buckets;
+  if (bucketsBefore !== undefined && bucketsAfter !== undefined) {
+    if (
+      bucketsBefore.length !== bucketsAfter.length ||
+      bucketsBefore.some((bound, index) => bound !== bucketsAfter[index])
+    ) {
+      throw new Error(
+        `Metric '${incoming.name}' is already registered with different histogram buckets. Two bucket sets make the same percentile mean two things.`,
+      );
+    }
+  }
+}
+
 export class MetricRegistry {
   readonly #instruments = new Map<string, MetricInstrument>();
 
   #declare(definition: MetricDefinition): MetricInstrument {
     const existing = this.#instruments.get(definition.name);
     if (existing !== undefined) {
-      if (existing.definition.kind !== definition.kind) {
-        throw new Error(
-          `Metric '${definition.name}' is already registered as a ${existing.definition.kind}; cannot re-register as a ${definition.kind}.`,
-        );
-      }
+      assertCompatibleDefinition(existing.definition, definition);
       return existing;
     }
     assertLabelsAllowed(Object.fromEntries(definition.labelNames.map((n) => [n, ''])));

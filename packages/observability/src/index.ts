@@ -88,3 +88,42 @@ export type {
   RemoteDependencyCheck,
 } from './health/health.js';
 export { HealthMonitor } from './health/health.js';
+
+// ── S6.1 · The delta ────────────────────────────────────────────────────────
+//
+// The package above is canonical and unchanged. What was missing:
+//
+//   - `MetricsCollector` and `HealthReporter` — the two ports. `Logger` and
+//     `Tracer` were already interfaces; `MetricRegistry` and `HealthMonitor`
+//     are classes, so a module taking either depended on an implementation.
+//     These are the shapes those classes already satisfy.
+//   - A named component vocabulary, so two services cannot report one
+//     dependency under two names.
+//   - The seven core metric DEFINITIONS, so two services cannot measure one
+//     thing under two names or two units.
+//   - The guards: severity, health state, metric kind, outcome.
+
+export type { ObservedComponent } from './components.js';
+export {
+  isObservedComponent,
+  isReadinessComponent,
+  OBSERVED_COMPONENTS,
+  READINESS_COMPONENTS,
+} from './components.js';
+
+export type { HealthReporter, MetricsCollector } from './ports.js';
+
+export {
+  AI_EXECUTION_DURATION,
+  CACHE_OPERATIONS,
+  CORE_METRIC_DEFINITIONS,
+  CREDIT_OPERATIONS,
+  PAYMENT_DURATION,
+  QUEUE_LATENCY,
+  REQUEST_DURATION,
+  WEBHOOK_PROCESSING,
+} from './metrics/definitions.js';
+
+export { assertCompatibleDefinition, isMetricKind, METRIC_KINDS } from './metrics/registry.js';
+export { HEALTH_STATUSES, isHealthStatus } from './health/health.js';
+export { isLogLevel, isOutcome, OUTCOMES } from './logging/log-record.js';

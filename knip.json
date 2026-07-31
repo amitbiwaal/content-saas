@@ -27,6 +27,7 @@
     "@contentos/contracts",
     "@contentos/database",
     "@contentos/events",
+    "@contentos/observability",
     "@contentos/platform",
     "@contentos/security",
     "@contentos/worker-host"

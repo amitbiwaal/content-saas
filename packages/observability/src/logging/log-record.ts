@@ -13,7 +13,25 @@
 export const LOG_LEVELS = ['error', 'warn', 'info', 'debug'] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
 
-export type Outcome = 'success' | 'failure' | 'denied' | 'suppressed';
+/**
+ * Is this a severity this build knows?
+ *
+ * The `Logger` port has a method per level, so a caller writing code cannot
+ * pass a bad one. A caller reading `LOG_LEVEL` out of the environment can, and
+ * a process that started at a level nobody declared would log the wrong amount
+ * for as long as it ran.
+ */
+export function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === 'string' && (LOG_LEVELS as readonly string[]).includes(value);
+}
+
+export const OUTCOMES = ['success', 'failure', 'denied', 'suppressed'] as const;
+
+export type Outcome = (typeof OUTCOMES)[number];
+
+export function isOutcome(value: unknown): value is Outcome {
+  return typeof value === 'string' && (OUTCOMES as readonly string[]).includes(value);
+}
 
 export interface LogRecord {
   // — always present —
