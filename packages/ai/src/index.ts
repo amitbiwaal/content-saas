@@ -851,3 +851,54 @@ export {
   isDraftServiceCode,
   MAX_DRAFT_LIST_LIMIT,
 } from './drafts/service.js';
+
+// ── S4.7 · Content search and discovery ─────────────────────────────────────
+
+export type {
+  ContentSearchFilter,
+  ContentSearchQuery,
+  ResolvedSearchQuery,
+  SearchCursor,
+  SearchKind,
+  SearchOrder,
+  SearchQueryValidation,
+} from './search/query.js';
+export {
+  canonicalSearch,
+  DEFAULT_SEARCH_LIMIT,
+  isSearchKind,
+  MAX_SEARCH_LIMIT,
+  SEARCH_KINDS,
+  SEARCH_ORDERS,
+  SUPPORTED_FILTERS,
+  validateSearchQuery,
+} from './search/query.js';
+
+export type { DraftSearchView, SearchHit } from './search/hits.js';
+export {
+  artifactHit,
+  draftHit,
+  runHit,
+  toDraftSearchView,
+  WITHHELD_DRAFT_FIELDS,
+} from './search/hits.js';
+
+export type {
+  ArtifactSearchCriteria,
+  ArtifactSearchPosition,
+  ArtifactSearchSlice,
+  ContentSearchStore,
+  DraftSearchCriteria,
+  DraftSearchPosition,
+  DraftSearchSlice,
+} from './search/store.js';
+
+export type {
+  ContentSearchOptions,
+  ContentSearchService,
+  SearchCode,
+  SearchPage,
+  SearchRefusal,
+  SearchResult,
+} from './search/service.js';
+export { createContentSearch, isSearchCode, SEARCH_CODES } from './search/service.js';
