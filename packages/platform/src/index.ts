@@ -699,3 +699,33 @@ export type {
   ReservationQuery,
   ReservationSlice,
 } from './credits/reservation-repository.js';
+
+// ── S5.3 · Settlement core ──────────────────────────────────────────────────
+//
+// Additive to the Sprint 1 consumption path, not a second one: the pipeline's
+// guards as pure functions, the commercial projection of a consumption entry,
+// and a port for readers that have no database.
+
+export type {
+  ConsumptionCommand,
+  ConsumptionId,
+  ConsumptionReason,
+  CreditConsumption,
+  SettlementPlan,
+  SettlementResult,
+} from './credits/consumption.js';
+export {
+  assertConsumable,
+  CONSUMPTION_REASON,
+  planConsumption,
+  remainingAfter,
+  toCreditConsumption,
+  toSettlementResult,
+} from './credits/consumption.js';
+
+export type {
+  ConsumptionPosition,
+  ConsumptionQuery,
+  ConsumptionRepository,
+  ConsumptionSlice,
+} from './credits/consumption-repository.js';

@@ -63,7 +63,19 @@ export type HoldErrorCode =
   | 'HoldNotOpen'
   | 'HoldExceeded'
   | 'InvalidHoldState'
-  | 'RunIdRequired';
+  | 'RunIdRequired'
+  // ── Added by the settlement core ──────────────────────────────────────────
+  // One taxonomy for one module: a second error type beside `HoldError` would
+  // mean catching two things to learn one fact.
+  /**
+   * A charge whose identifiers do not match the reservation it names.
+   *
+   * Its own code because it is a different mistake from a bad state: the
+   * reservation is fine, and the caller is about to file a charge under the
+   * wrong organization, workspace or run — which bills the wrong client, in a
+   * table with no UPDATE path.
+   */
+  | 'ConsumptionMismatch';
 
 export class HoldError extends Error {
   readonly code: HoldErrorCode;
