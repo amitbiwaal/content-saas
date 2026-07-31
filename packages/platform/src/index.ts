@@ -942,3 +942,52 @@ export type {
   StripeTransportResponse,
 } from './billing/payments/stripe/adapter.js';
 export { createStripeProvider } from './billing/payments/stripe/adapter.js';
+
+// ── S5.7 · Commercial Service Facade ────────────────────────────────────────
+//
+// The one entry point for commercial operations. It coordinates Billing,
+// Credits and the payment provider and owns none of them: no business data, no
+// persistence, no payment implementation.
+//
+// The shape is the Content Management Facade's — one request union, one result
+// union, refusals as values, tenancy from the context — because that surface
+// already answered "what does an entry point look like here".
+
+export type {
+  CancelSubscriptionPayload,
+  ChangePlanPayload,
+  CommercialContext,
+  CommercialData,
+  CommercialOperation,
+  CommercialRefusal,
+  CommercialRequest,
+  CommercialResult,
+  CommercialSuccess,
+  CommercialSummary,
+  CommercialTrace,
+  CreateBillingAccountPayload,
+  CreateCheckoutSessionPayload,
+  CreatePortalSessionPayload,
+  CreateSubscriptionPayload,
+  LoadCommercialSummaryPayload,
+  ReceiveWebhookPayload,
+} from './commerce/model.js';
+export { COMMERCIAL_OPERATIONS, isCommercialOperation } from './commerce/model.js';
+
+export type { RequestIssue as CommercialRequestIssue } from './commerce/validation.js';
+export {
+  ownershipIssue as commercialOwnershipIssue,
+  validateCommercialContext,
+  validateCommercialRequest,
+} from './commerce/validation.js';
+
+export type {
+  CommercialErrorCode,
+  CommercialService,
+  CommercialServiceOptions,
+} from './commerce/service.js';
+export {
+  COMMERCIAL_ERROR_CODES,
+  createCommercialService,
+  isCommercialErrorCode,
+} from './commerce/service.js';
