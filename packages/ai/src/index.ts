@@ -514,4 +514,56 @@ export {
 
 export type { Router, RouterOptions, RoutingInput } from './routing/router.js';
 export { createRouter, RoutingInputError } from './routing/router.js';
+
+// The Prompt Template Library — `08-ai-platform/prompt-engine.md`. The identity
+// level the spec calls `prompt_templates`, layered over the S2.3 pipeline that
+// already owns one immutable version. It supplies prompts; it executes nothing.
+export type {
+  SemanticVersion,
+  TemplateCapability,
+  TemplateMetadata,
+  TemplateVisibility,
+} from './templates/metadata.js';
+export {
+  compareSemanticVersions,
+  formatSemanticVersion,
+  isSemanticallyCompatible,
+  isTemplateVisibility,
+  parseSemanticVersion,
+  TEMPLATE_VISIBILITIES,
+} from './templates/metadata.js';
+
+export type {
+  LibraryTemplate,
+  PromptVersion,
+  TemplateDefinition,
+  TemplateLibrary,
+  TemplateLibraryErrorCode,
+} from './templates/library.js';
+export {
+  bySemanticVersion,
+  createTemplateLibrary,
+  describeVersion,
+  isTemplateLibraryError,
+  newestVersion,
+  promptVersionStringOf,
+  TEMPLATE_LIBRARY_ERROR_CODES,
+  TemplateLibraryError,
+} from './templates/library.js';
+
+export type {
+  ResolutionRejectionCode,
+  ResolveOptions,
+  ResolvedTemplate,
+  TemplateResolution,
+  VersionSelector,
+} from './templates/resolve.js';
+export {
+  isResolutionRejectionCode,
+  RESOLUTION_REJECTION_CODES,
+  resolveTemplate,
+} from './templates/resolve.js';
+
+export type { CanonicalPrompt, RenderOptions, RenderPart } from './templates/render.js';
+export { RENDER_ORDER, renderCanonicalPrompt } from './templates/render.js';
 export { createGateway, PIPELINE_ORDER } from './gateway/admission.js';
