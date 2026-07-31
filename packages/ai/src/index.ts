@@ -566,4 +566,62 @@ export {
 
 export type { CanonicalPrompt, RenderOptions, RenderPart } from './templates/render.js';
 export { RENDER_ORDER, renderCanonicalPrompt } from './templates/render.js';
+
+// Content workflow blueprints — immutable definitions of how content is
+// produced. They describe a GRAPH; the frozen S2.4 runtime walks a linear
+// sequence, and `toRuntimeDefinition` is the one seam between them. Nothing
+// here executes, and no step names a provider.
+export type {
+  BranchStepDefinition,
+  MergeStepDefinition,
+  PromptStepDefinition,
+  TransformStepDefinition,
+  ValidateStepDefinition,
+  WorkflowCapability,
+  WorkflowMetadata,
+  WorkflowStepDefinition,
+  WorkflowStepKind,
+} from './blueprints/steps.js';
+export { binds, isWorkflowStepKind, outgoing, WORKFLOW_STEP_KINDS } from './blueprints/steps.js';
+
+export type {
+  BlueprintIssue,
+  BlueprintValidationResult,
+  ValidateBlueprintOptions,
+} from './blueprints/validation.js';
+export { validateBlueprint } from './blueprints/validation.js';
+
+export type {
+  ContentWorkflow,
+  ContentWorkflowDefinition,
+  WorkflowRegistry,
+  WorkflowRegistryErrorCode,
+  WorkflowRegistryOptions,
+  WorkflowVersion,
+} from './blueprints/registry.js';
+export {
+  createWorkflowRegistry,
+  describeWorkflowVersion,
+  isWorkflowRegistryError,
+  WORKFLOW_REGISTRY_ERROR_CODES,
+  WorkflowRegistryError,
+} from './blueprints/registry.js';
+
+export type {
+  ResolvedWorkflow,
+  ResolveWorkflowOptions,
+  RuntimeCompilationCode,
+  RuntimeCompilationOptions,
+  WorkflowResolution,
+  WorkflowResolutionCode,
+} from './blueprints/resolve.js';
+export {
+  isLinear,
+  isWorkflowResolutionCode,
+  resolveWorkflow,
+  RUNTIME_COMPILATION_CODES,
+  RuntimeCompilationError,
+  toRuntimeDefinition,
+  WORKFLOW_RESOLUTION_CODES,
+} from './blueprints/resolve.js';
 export { createGateway, PIPELINE_ORDER } from './gateway/admission.js';
