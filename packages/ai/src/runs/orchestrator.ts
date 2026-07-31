@@ -64,6 +64,8 @@ import type { VersionSelector } from '../templates/resolve.js';
 import type { PricingRegistry } from '../usage/pricing.js';
 import { recordResponseUsage } from '../usage/recorder.js';
 import { validateWorkflowDefinition, type WorkflowDefinition } from '../workflow/definition.js';
+import { toStoredRecords } from './mapping.js';
+import type { ContentRunRepository } from './repository.js';
 import {
   awaitExecution,
   buildRequest,
@@ -129,6 +131,17 @@ export interface OrchestratorOptions {
    */
   readonly delay: (ms: number) => Promise<void>;
   readonly retryPolicy?: RetryPolicy;
+  /**
+   * Where a settled run is recorded, through the persistence PORT only.
+   *
+   * Optional, so a caller that wants a run and not a record — a preview, a
+   * test — is not obliged to supply a store. When it is present, exactly one
+   * `saveRun` happens per run, at the end, whatever the outcome.
+   *
+   * The orchestrator knows nothing about how it is stored. There is no driver,
+   * no SQL and no schema decision anywhere in this package (S4.4).
+   */
+  readonly runs?: ContentRunRepository;
 }
 
 export interface StartRunOptions {
@@ -274,320 +287,366 @@ export function createOrchestrator(options: OrchestratorOptions): Orchestrator {
     }
   }
 
-  return {
-    async start(input: StartRunOptions): Promise<ContentRunResult> {
-      const startedMs = now().getTime();
-      const remaining = (): number | null =>
-        input.runTimeoutMs === undefined
-          ? null
-          : Math.max(0, input.runTimeoutMs - (now().getTime() - startedMs));
+  /**
+   * The pipeline.
+   *
+   * Produces a result and stops. Persistence is deliberately outside it, so
+   * "the repository is invoked exactly once per run" is true by construction
+   * rather than by every return path having to remember it.
+   */
+  async function execute(input: StartRunOptions): Promise<ContentRunResult> {
+    const startedMs = now().getTime();
+    const remaining = (): number | null =>
+      input.runTimeoutMs === undefined
+        ? null
+        : Math.max(0, input.runTimeoutMs - (now().getTime() - startedMs));
 
-      // ── 1 · Resolve the workflow ─────────────────────────────────────────
-      const resolution = resolveWorkflow({
-        registry: workflows,
-        id: input.workflowId,
-        selector: input.selector,
-        ...(input.capability === undefined ? {} : { capability: input.capability }),
-      });
+    // ── 1 · Resolve the workflow ─────────────────────────────────────────
+    const resolution = resolveWorkflow({
+      registry: workflows,
+      id: input.workflowId,
+      selector: input.selector,
+      ...(input.capability === undefined ? {} : { capability: input.capability }),
+    });
 
-      if (resolution.outcome === 'refused') {
-        // No run exists yet, so one is created solely to carry the refusal: a
-        // caller that asked for work deserves a record of why it did not
-        // happen, and an incompatible capability is an outcome, not a throw.
-        const stub = createRun(
-          input.workflowId,
-          0,
-          input.workflowId,
-          input.capability ?? 'text',
-          input.metadata,
-        );
-        return settle(stub, 'fail', 'WorkflowUnresolved', resolution.reason);
-      }
-
-      const { resolved } = resolution;
-      const { version } = resolved;
-
-      let run = createRun(
-        resolved.workflow.id,
-        version.version,
-        resolved.workflowVersion,
-        version.capability.capability,
+    if (resolution.outcome === 'refused') {
+      // No run exists yet, so one is created solely to carry the refusal: a
+      // caller that asked for work deserves a record of why it did not
+      // happen, and an incompatible capability is an outcome, not a throw.
+      const stub = createRun(
+        input.workflowId,
+        0,
+        input.workflowId,
+        input.capability ?? 'text',
         input.metadata,
       );
+      return settle(stub, 'fail', 'WorkflowUnresolved', resolution.reason);
+    }
 
-      // A streamed run assembles its artifact from chunks, which needs the
-      // streaming framework's assembler and an executor that streams. Refused
-      // rather than quietly served as a buffered call: a caller that asked to
-      // stream and got one response at the end has had its latency budget spent
-      // without being told.
-      if (version.capability.executionMode === 'streaming') {
-        return settle(
-          run,
-          'fail',
-          'StreamingUnsupported',
-          `${resolved.workflowVersion} declares streaming; this orchestrator collects a complete artifact set and cannot yet assemble one from a stream.`,
-        );
+    const { resolved } = resolution;
+    const { version } = resolved;
+
+    let run = createRun(
+      resolved.workflow.id,
+      version.version,
+      resolved.workflowVersion,
+      version.capability.capability,
+      input.metadata,
+    );
+
+    // A streamed run assembles its artifact from chunks, which needs the
+    // streaming framework's assembler and an executor that streams. Refused
+    // rather than quietly served as a buffered call: a caller that asked to
+    // stream and got one response at the end has had its latency budget spent
+    // without being told.
+    if (version.capability.executionMode === 'streaming') {
+      return settle(
+        run,
+        'fail',
+        'StreamingUnsupported',
+        `${resolved.workflowVersion} declares streaming; this orchestrator collects a complete artifact set and cannot yet assemble one from a stream.`,
+      );
+    }
+
+    // ── 2 · Compile ──────────────────────────────────────────────────────
+    // Templates are resolved HERE, inside the compiler, against the library —
+    // a second resolution pass would be a second opinion that could disagree.
+    run = withState(run, { status: assertTransitionAllowed(run.state.status, 'compile') });
+
+    let definition: WorkflowDefinition;
+    try {
+      definition = toRuntimeDefinition({
+        resolved,
+        library: templates,
+        timeoutMs: input.timeoutMs,
+        model: input.model,
+        providers,
+      });
+    } catch (failure) {
+      if (failure instanceof RuntimeCompilationError) {
+        return settle(run, 'fail', compilationFailureCode(failure), failure.message);
       }
+      throw failure;
+    }
 
-      // ── 2 · Compile ──────────────────────────────────────────────────────
-      // Templates are resolved HERE, inside the compiler, against the library —
-      // a second resolution pass would be a second opinion that could disagree.
-      run = withState(run, { status: assertTransitionAllowed(run.state.status, 'compile') });
+    // The runtime's OWN validator, ahead of `createWorkflowExecution`, which
+    // applies it too and throws. Asking first is what makes a definition this
+    // orchestrator produced and the engine refuses a COMPILATION failure
+    // rather than a runtime one — which is the distinction a caller acts on.
+    const valid = validateWorkflowDefinition(definition);
+    if (!valid.ok) {
+      return settle(
+        run,
+        'fail',
+        'CompilationFailed',
+        `The compiled definition is not runnable: ${valid.issues
+          .map((issue) => `${issue.field} ${issue.code}`)
+          .join(', ')}.`,
+      );
+    }
 
-      let definition: WorkflowDefinition;
-      try {
-        definition = toRuntimeDefinition({
-          resolved,
-          library: templates,
-          timeoutMs: input.timeoutMs,
-          model: input.model,
-          providers,
-        });
-      } catch (failure) {
-        if (failure instanceof RuntimeCompilationError) {
-          return settle(run, 'fail', compilationFailureCode(failure), failure.message);
-        }
-        throw failure;
-      }
-
-      // The runtime's OWN validator, ahead of `createWorkflowExecution`, which
-      // applies it too and throws. Asking first is what makes a definition this
-      // orchestrator produced and the engine refuses a COMPILATION failure
-      // rather than a runtime one — which is the distinction a caller acts on.
-      const valid = validateWorkflowDefinition(definition);
-      if (!valid.ok) {
-        return settle(
-          run,
-          'fail',
-          'CompilationFailed',
-          `The compiled definition is not runnable: ${valid.issues
-            .map((issue) => `${issue.field} ${issue.code}`)
-            .join(', ')}.`,
-        );
-      }
-
-      run = deepFreeze({
-        ...run,
-        // Pinned at compile time: a promotion mid-flight cannot change what
-        // this run is doing.
-        templateVersions: Object.freeze(
-          definition.steps.map(
-            (step) => `${step.templateRef.id}@${String(step.templateRef.version ?? 0)}`,
-          ),
+    run = deepFreeze({
+      ...run,
+      // Pinned at compile time: a promotion mid-flight cannot change what
+      // this run is doing.
+      templateVersions: Object.freeze(
+        definition.steps.map(
+          (step) => `${step.templateRef.id}@${String(step.templateRef.version ?? 0)}`,
         ),
-        state: {
-          ...run.state,
-          status: assertTransitionAllowed(run.state.status, 'ready'),
-          // The runtime keys every step's idempotency key on this. Using the
-          // request's key rather than the run id makes two orchestrations of
-          // one request address the same work, which is the whole point of
-          // having been given a key.
-          executionId: input.metadata.idempotencyKey,
-          timings: { ...run.state.timings, compiledAt: now().toISOString() },
-        },
-      });
+      ),
+      state: {
+        ...run.state,
+        status: assertTransitionAllowed(run.state.status, 'ready'),
+        // The runtime keys every step's idempotency key on this. Using the
+        // request's key rather than the run id makes two orchestrations of
+        // one request address the same work, which is the whole point of
+        // having been given a key.
+        executionId: input.metadata.idempotencyKey,
+        timings: { ...run.state.timings, compiledAt: now().toISOString() },
+      },
+    });
 
-      // ── 3 · Create the execution and drive it ────────────────────────────
-      run = withState(run, {
-        status: assertTransitionAllowed(run.state.status, 'start'),
-        timings: { ...run.state.timings, startedAt: now().toISOString() },
-      });
+    // ── 3 · Create the execution and drive it ────────────────────────────
+    run = withState(run, {
+      status: assertTransitionAllowed(run.state.status, 'start'),
+      timings: { ...run.state.timings, startedAt: now().toISOString() },
+    });
 
-      const catalogue = createPromptCatalogue([...input.promptTemplates]);
-      const artifacts: ContentArtifact[] = [];
-      /** The run as it stands, carrying everything produced so far. */
-      const sofar = (): ContentRun => withState(run, { artifacts: Object.freeze([...artifacts]) });
+    const catalogue = createPromptCatalogue([...input.promptTemplates]);
+    const artifacts: ContentArtifact[] = [];
+    /** The run as it stands, carrying everything produced so far. */
+    const sofar = (): ContentRun => withState(run, { artifacts: Object.freeze([...artifacts]) });
 
-      let execution: WorkflowExecution;
-      try {
-        execution = startWorkflow(
-          createWorkflowExecution({
-            workflowId: input.metadata.idempotencyKey,
-            definition,
-            context: {
-              tenant: {
-                // ADR-017: the workspace IS the tenant.
-                tenantId: input.metadata.workspace.workspaceId,
-                organizationId: input.metadata.organization.organizationId,
-                source: 'request',
-              },
-              jobId: input.jobId ?? run.runId,
-              correlationId: input.metadata.correlationId,
-              metadata: {},
+    let execution: WorkflowExecution;
+    try {
+      execution = startWorkflow(
+        createWorkflowExecution({
+          workflowId: input.metadata.idempotencyKey,
+          definition,
+          context: {
+            tenant: {
+              // ADR-017: the workspace IS the tenant.
+              tenantId: input.metadata.workspace.workspaceId,
+              organizationId: input.metadata.organization.organizationId,
+              source: 'request',
             },
-            variables: input.variables,
-          }),
+            jobId: input.jobId ?? run.runId,
+            correlationId: input.metadata.correlationId,
+            metadata: {},
+          },
+          variables: input.variables,
+        }),
+      );
+    } catch (failure) {
+      return settle(
+        run,
+        'fail',
+        'RuntimeFailed',
+        failure instanceof Error ? failure.message : String(failure),
+      );
+    }
+
+    while (execution.state.status !== 'completed' && execution.state.status !== 'failed') {
+      if (input.signal?.cancelled() === true) {
+        // Between steps, which is the only place it can be honoured — and the
+        // artifacts already produced travel with the cancellation.
+        return settle(sofar(), 'cancel', 'Cancelled', 'The caller cancelled this run.');
+      }
+
+      const left = remaining();
+      if (left !== null && left <= 0) {
+        return settle(
+          sofar(),
+          'fail',
+          'Timeout',
+          `The run exceeded its ${String(input.runTimeoutMs)}ms budget after ${String(artifacts.length)} step(s).`,
         );
+      }
+
+      let stepId: string;
+      try {
+        execution = loadStep(execution);
+        stepId = execution.state.stepId ?? '';
+        execution = preparePrompt(execution, catalogue);
+        execution = buildRequest(execution);
+        execution = awaitExecution(execution);
       } catch (failure) {
         return settle(
-          run,
+          sofar(),
           'fail',
           'RuntimeFailed',
           failure instanceof Error ? failure.message : String(failure),
         );
       }
 
-      while (execution.state.status !== 'completed' && execution.state.status !== 'failed') {
-        if (input.signal?.cancelled() === true) {
-          // Between steps, which is the only place it can be honoured — and the
-          // artifacts already produced travel with the cancellation.
-          return settle(sofar(), 'cancel', 'Cancelled', 'The caller cancelled this run.');
-        }
-
-        const left = remaining();
-        if (left !== null && left <= 0) {
-          return settle(
-            sofar(),
-            'fail',
-            'Timeout',
-            `The run exceeded its ${String(input.runTimeoutMs)}ms budget after ${String(artifacts.length)} step(s).`,
-          );
-        }
-
-        let stepId: string;
-        try {
-          execution = loadStep(execution);
-          stepId = execution.state.stepId ?? '';
-          execution = preparePrompt(execution, catalogue);
-          execution = buildRequest(execution);
-          execution = awaitExecution(execution);
-        } catch (failure) {
-          return settle(
-            sofar(),
-            'fail',
-            'RuntimeFailed',
-            failure instanceof Error ? failure.message : String(failure),
-          );
-        }
-
-        const prepared = execution.state.prepared;
-        if (prepared === null) {
-          return settle(
-            sofar(),
-            'fail',
-            'RuntimeFailed',
-            'The runtime reached execution with no prepared request.',
-          );
-        }
-
-        // ── The Router chooses. This file never does ──────────────────────
-        const routed = await router.route({
-          request: prepared.request,
-          principal: input.metadata.principal,
-          organization: input.metadata.organization,
-          workspace: input.metadata.workspace,
-          executionMode: 'buffered',
-        });
-        if (routed.outcome === 'refused') {
-          return settle(sofar(), 'fail', 'ExecutionFailed', routed.reason);
-        }
-
-        const dispatched = await dispatchStep(prepared.request, routed.plan, remaining());
-        if ('failure' in dispatched) {
-          const { failure } = dispatched;
-          return settle(
-            sofar(),
-            'fail',
-            'ExecutionFailed',
-            failure instanceof Error ? failure.message : String(failure),
-            isProviderError(failure) ? failure.code : null,
-          );
-        }
-
-        const { response } = dispatched;
-
-        // Metered through the frozen recorder, which owns the arithmetic and
-        // the decimal format the ledger requires.
-        //
-        // A metering failure does NOT fail the run: the call already happened
-        // and was already paid for, and discarding the artifact would lose the
-        // thing the customer bought over a bookkeeping fault. It is recorded on
-        // the artifact instead, where it stays visible.
-        let charge = '0.000000';
-        let meteringError: string | null = null;
-        try {
-          const metered = recordResponseUsage(
-            response,
-            {
-              tenantId: input.metadata.workspace.workspaceId,
-              organizationId: input.metadata.organization.organizationId,
-              correlationId: input.metadata.correlationId,
-              attempt: dispatched.attempts,
-              taskType: prepared.request.taskType,
-              promptVersion: prepared.promptVersion,
-              runId: run.runId,
-              stepId,
-            },
-            pricing,
-          );
-          charge = metered.chargeableAmount;
-        } catch (failure) {
-          meteringError = failure instanceof Error ? failure.message : String(failure);
-        }
-
-        artifacts.push(
-          deepFreeze({
-            stepId,
-            promptVersion: prepared.promptVersion,
-            // What ACTUALLY ran, taken from the response — a plan may name one
-            // thing and an adapter report another, and the artifact records
-            // what happened.
-            providerId: response.providerId,
-            model: response.model,
-            capability: prepared.capability,
-            content: response.content,
-            finishReason: response.finishReason,
-            usage: response.usage,
-            tokens: response.usage.tokens,
-            attempts: dispatched.attempts,
-            metadata: {
-              plannedProviderId: routed.plan.providerId,
-              plannedModel: routed.plan.model,
-              canonicalModel: routed.plan.canonicalModel,
-              routingPolicy: routed.plan.policy,
-              policyVersion: routed.plan.policyVersion,
-              chargeableAmount: charge,
-              meteringError,
-            },
-          }),
+      const prepared = execution.state.prepared;
+      if (prepared === null) {
+        return settle(
+          sofar(),
+          'fail',
+          'RuntimeFailed',
+          'The runtime reached execution with no prepared request.',
         );
-
-        try {
-          execution = recordExecution(execution, response);
-        } catch (failure) {
-          return settle(
-            sofar(),
-            'fail',
-            'RuntimeFailed',
-            failure instanceof Error ? failure.message : String(failure),
-          );
-        }
       }
 
-      // ── 4 · Collect ──────────────────────────────────────────────────────
-      const finished = withState(run, {
-        artifacts: Object.freeze([...artifacts]),
-        timings: { ...run.state.timings, finishedAt: now().toISOString() },
+      // ── The Router chooses. This file never does ──────────────────────
+      const routed = await router.route({
+        request: prepared.request,
+        principal: input.metadata.principal,
+        organization: input.metadata.organization,
+        workspace: input.metadata.workspace,
+        executionMode: 'buffered',
       });
-
-      if (execution.state.status === 'failed') {
-        return Object.freeze({
-          outcome: 'failed' as const,
-          run: withState(finished, {
-            status: assertTransitionAllowed(finished.state.status, 'fail'),
-          }),
-          code: 'RuntimeFailed' as const,
-          reason: execution.state.failure ?? 'The workflow failed.',
-          providerCode: null,
-        });
+      if (routed.outcome === 'refused') {
+        return settle(sofar(), 'fail', 'ExecutionFailed', routed.reason);
       }
 
-      return Object.freeze({
-        outcome: 'completed' as const,
-        run: withState(finished, {
-          status: assertTransitionAllowed(finished.state.status, 'complete'),
+      const dispatched = await dispatchStep(prepared.request, routed.plan, remaining());
+      if ('failure' in dispatched) {
+        const { failure } = dispatched;
+        return settle(
+          sofar(),
+          'fail',
+          'ExecutionFailed',
+          failure instanceof Error ? failure.message : String(failure),
+          isProviderError(failure) ? failure.code : null,
+        );
+      }
+
+      const { response } = dispatched;
+
+      // Metered through the frozen recorder, which owns the arithmetic and
+      // the decimal format the ledger requires.
+      //
+      // A metering failure does NOT fail the run: the call already happened
+      // and was already paid for, and discarding the artifact would lose the
+      // thing the customer bought over a bookkeeping fault. It is recorded on
+      // the artifact instead, where it stays visible.
+      let charge = '0.000000';
+      let meteringError: string | null = null;
+      try {
+        const metered = recordResponseUsage(
+          response,
+          {
+            tenantId: input.metadata.workspace.workspaceId,
+            organizationId: input.metadata.organization.organizationId,
+            correlationId: input.metadata.correlationId,
+            attempt: dispatched.attempts,
+            taskType: prepared.request.taskType,
+            promptVersion: prepared.promptVersion,
+            runId: run.runId,
+            stepId,
+          },
+          pricing,
+        );
+        charge = metered.chargeableAmount;
+      } catch (failure) {
+        meteringError = failure instanceof Error ? failure.message : String(failure);
+      }
+
+      artifacts.push(
+        deepFreeze({
+          stepId,
+          promptVersion: prepared.promptVersion,
+          // What ACTUALLY ran, taken from the response — a plan may name one
+          // thing and an adapter report another, and the artifact records
+          // what happened.
+          providerId: response.providerId,
+          model: response.model,
+          capability: prepared.capability,
+          content: response.content,
+          finishReason: response.finishReason,
+          usage: response.usage,
+          tokens: response.usage.tokens,
+          attempts: dispatched.attempts,
+          metadata: {
+            plannedProviderId: routed.plan.providerId,
+            plannedModel: routed.plan.model,
+            canonicalModel: routed.plan.canonicalModel,
+            routingPolicy: routed.plan.policy,
+            policyVersion: routed.plan.policyVersion,
+            chargeableAmount: charge,
+            meteringError,
+          },
         }),
+      );
+
+      try {
+        execution = recordExecution(execution, response);
+      } catch (failure) {
+        return settle(
+          sofar(),
+          'fail',
+          'RuntimeFailed',
+          failure instanceof Error ? failure.message : String(failure),
+        );
+      }
+    }
+
+    // ── 4 · Collect ──────────────────────────────────────────────────────
+    const finished = withState(run, {
+      artifacts: Object.freeze([...artifacts]),
+      timings: { ...run.state.timings, finishedAt: now().toISOString() },
+    });
+
+    if (execution.state.status === 'failed') {
+      return Object.freeze({
+        outcome: 'failed' as const,
+        run: withState(finished, {
+          status: assertTransitionAllowed(finished.state.status, 'fail'),
+        }),
+        code: 'RuntimeFailed' as const,
+        reason: execution.state.failure ?? 'The workflow failed.',
+        providerCode: null,
       });
-    },
+    }
+
+    return Object.freeze({
+      outcome: 'completed' as const,
+      run: withState(finished, {
+        status: assertTransitionAllowed(finished.state.status, 'complete'),
+      }),
+    });
+  }
+
+  /**
+   * Record a settled run, through the port and nowhere else.
+   *
+   * EVERY settled run, whatever its outcome. A failed run's artifacts were
+   * produced and paid for, and a cancelled one's are the work already done;
+   * storing only successes would make the runs an operator most needs to look
+   * at the only ones with no record. `StoredContentRun.status` exists so a
+   * stored run can say it failed.
+   *
+   * A save that throws does not lose the result — the artifacts are on it and
+   * are usable — but it does change what the caller is told. Persistence is the
+   * source of truth, so a run missing from it is a run nobody will find again,
+   * and reporting success would promise a durable record that does not exist.
+   */
+  async function persist(result: ContentRunResult): Promise<ContentRunResult> {
+    const repository = options.runs;
+    if (repository === undefined) return result;
+
+    try {
+      await repository.saveRun(toStoredRecords(result, now().toISOString()));
+      return result;
+    } catch (failure) {
+      const detail = failure instanceof Error ? failure.message : String(failure);
+      // A run that had already failed keeps ITS code. The first cause is what
+      // an operator acts on; the storage fault is appended, not substituted.
+      return result.outcome === 'failed'
+        ? Object.freeze({ ...result, reason: `${result.reason} It was also not stored: ${detail}` })
+        : Object.freeze({
+            outcome: 'failed' as const,
+            run: result.run,
+            code: 'PersistenceFailed' as const,
+            reason: detail,
+            providerCode: null,
+          });
+    }
+  }
+
+  return {
+    start: (input: StartRunOptions): Promise<ContentRunResult> => execute(input).then(persist),
   };
 }

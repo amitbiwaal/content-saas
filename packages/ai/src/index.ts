@@ -671,3 +671,40 @@ export type {
   StartRunOptions,
 } from './runs/orchestrator.js';
 export { createOrchestrator } from './runs/orchestrator.js';
+
+// ── S4.4 · Content persistence ──────────────────────────────────────────────
+
+export type {
+  StoredArtifact,
+  StoredContentRun,
+  StoredExecutionMetadata,
+  StoredFailure,
+  StoredPromptReference,
+  StoredRecord,
+  StoredRecordIssue,
+  StoredRecordValidation,
+  StoredTimings,
+  StoredUsage,
+} from './runs/stored.js';
+export {
+  CONTENT_RUN_SCHEMA_VERSION,
+  isSupportedSchemaVersion,
+  parsePromptVersion,
+  SUPPORTED_SCHEMA_VERSIONS,
+  validateStoredArtifact,
+  validateStoredRun,
+} from './runs/stored.js';
+
+export type { ContentRunRepository, SaveRunInput, UpdateStatusInput } from './runs/repository.js';
+
+export type { ToContentRunOptions, ToStoredOptions } from './runs/mapping.js';
+export {
+  storedFailureOf,
+  toContentRun,
+  toStoredArtifacts,
+  toStoredRecords,
+  toStoredRun,
+} from './runs/mapping.js';
+
+export type { LoadContentRunOptions, RunLoadCode, RunLoadResult } from './runs/load.js';
+export { isRunLoadCode, loadContentRun, RUN_LOAD_CODES } from './runs/load.js';

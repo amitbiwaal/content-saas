@@ -446,12 +446,23 @@ describe('the orchestrator owns no clock and no random source', () => {
 // ── Artifacts are returned, never stored ────────────────────────────────────
 
 describe('artifacts are returned and nothing else', () => {
-  it('has no persistence anywhere in the run module', () => {
+  it('has no store of its own anywhere in the run module', () => {
+    // S4.3 stated this as "no persistence at all". S4.4 gave the orchestrator a
+    // repository PORT, so the claim is now the stronger and still-true one: the
+    // run module holds no store, no driver and no SQL. Whether a record is
+    // written, and how, is a decision made entirely outside this package.
     for (const file of ['orchestrator.ts', 'run.ts', 'state.ts']) {
       const code = codeOf(file);
       expect(code).not.toMatch(/@contentos\/database/);
-      expect(code).not.toMatch(/repository|persist\(|\.save\(|INSERT INTO/i);
+      expect(code).not.toMatch(/INSERT INTO|SELECT .* FROM|createPool|new Client\(/i);
     }
+  });
+
+  it('reaches a store only through the injected port', () => {
+    const code = codeOf('orchestrator.ts');
+    // The port is a type; the only call is the one the contract names.
+    expect(code).toMatch(/repository\.saveRun\(/);
+    expect(code).not.toMatch(/import \{[^}]*createContentRunRepository/);
   });
 
   it('emits no event and enqueues no job', () => {

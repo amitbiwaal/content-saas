@@ -21,6 +21,7 @@ import {
   type RunExecutor,
   type StartRunOptions,
 } from './orchestrator.js';
+import type { ContentRunRepository, SaveRunInput } from './repository.js';
 import type { RunMetadata } from './run.js';
 
 /**
@@ -363,6 +364,36 @@ interface Harness {
   readonly router?: Router;
   readonly clock?: () => Date;
   readonly delays?: number[];
+  /** Supplied only where a test is about persistence (S4.4). */
+  readonly runs?: ContentRunRepository;
+}
+
+/** A repository that counts its calls. The port's only job is to be counted. */
+function recordingRepository(saveRun?: ContentRunRepository['saveRun']) {
+  const calls = { saveRun: 0, loadRun: 0, loadArtifacts: 0, updateStatus: 0 };
+  const saved: SaveRunInput[] = [];
+
+  const repository: ContentRunRepository = {
+    saveRun: (input) => {
+      calls.saveRun += 1;
+      saved.push(input);
+      return saveRun === undefined ? Promise.resolve() : saveRun(input);
+    },
+    loadRun: () => {
+      calls.loadRun += 1;
+      return Promise.resolve(null);
+    },
+    loadArtifacts: () => {
+      calls.loadArtifacts += 1;
+      return Promise.resolve([]);
+    },
+    updateStatus: () => {
+      calls.updateStatus += 1;
+      return Promise.resolve();
+    },
+  };
+
+  return { repository, calls, saved };
 }
 
 function harnessFor(harness: Harness = {}) {
@@ -397,6 +428,7 @@ function harnessFor(harness: Harness = {}) {
       delays.push(ms);
       return Promise.resolve();
     },
+    ...(harness.runs === undefined ? {} : { runs: harness.runs }),
   };
 
   return { orchestrator: createOrchestrator(options), dispatched, delays, workflows };
@@ -893,5 +925,121 @@ describe('determinism', () => {
     const result = await orchestrator.start(start());
 
     expect(result.run.runId).toBe('run-1');
+  });
+});
+
+// ── Persistence (S4.4) ──────────────────────────────────────────────────────
+
+describe('recording a settled run', () => {
+  it('invokes the repository exactly once', async () => {
+    const { repository, calls } = recordingRepository();
+    const { orchestrator } = harnessFor({ runs: repository });
+    await orchestrator.start(start());
+
+    expect(calls.saveRun).toBe(1);
+  });
+
+  it('reads nothing while recording', async () => {
+    const { repository, calls } = recordingRepository();
+    const { orchestrator } = harnessFor({ runs: repository });
+    await orchestrator.start(start());
+
+    expect(calls.loadRun).toBe(0);
+    expect(calls.loadArtifacts).toBe(0);
+    expect(calls.updateStatus).toBe(0);
+  });
+
+  it('stores nothing when no repository is supplied', async () => {
+    // A caller that wants a run and not a record is not obliged to have a store.
+    const { orchestrator } = harnessFor();
+    const result = await orchestrator.start(start());
+
+    expect(result.outcome).toBe('completed');
+  });
+
+  it('hands over the run and its artifacts together', async () => {
+    const { repository, saved } = recordingRepository();
+    const { orchestrator } = harnessFor({ runs: repository });
+    await orchestrator.start(start());
+
+    expect(saved[0]?.run.runId).toBe('run-1');
+    expect(saved[0]?.artifacts).toHaveLength(2);
+    expect(saved[0]?.run.artifactCount).toBe(2);
+  });
+
+  it('records the mapped provenance, not the live run', async () => {
+    const { repository, saved } = recordingRepository();
+    const { orchestrator } = harnessFor({ runs: repository });
+    await orchestrator.start(start());
+
+    expect(saved[0]?.run.execution.workflowRef).toBe('article.draft@1');
+    expect(saved[0]?.run.templateVersions.map((entry) => entry.promptVersion)).toEqual([
+      'planning.outline@4',
+      'writing.draft@4',
+    ]);
+    expect(saved[0]?.artifacts[0]?.usage.totalTokens).toBe(30);
+  });
+
+  it('records a failed run too, with its failure', async () => {
+    // The runs an operator most needs to look at would otherwise be the only
+    // ones with no record.
+    const { repository, saved, calls } = recordingRepository();
+    const { orchestrator } = harnessFor({ runs: repository });
+    await orchestrator.start(start({ workflowId: 'article.branching' }));
+
+    expect(calls.saveRun).toBe(1);
+    expect(saved[0]?.run.status).toBe('failed');
+    expect(saved[0]?.run.failure?.code).toBe('CompilationFailed');
+  });
+
+  it('records a cancelled run, with the artifacts it had produced', async () => {
+    let steps = 0;
+    const { repository, saved } = recordingRepository();
+    const { orchestrator } = harnessFor({
+      runs: repository,
+      dispatch: ({ request }) => {
+        steps += 1;
+        return Promise.resolve(RESPONSE(request, 'done'));
+      },
+    });
+    await orchestrator.start(start({ signal: { cancelled: () => steps >= 1 } }));
+
+    expect(saved[0]?.run.status).toBe('cancelled');
+    expect(saved[0]?.artifacts).toHaveLength(1);
+  });
+});
+
+describe('when the store refuses', () => {
+  it('reports PersistenceFailed rather than a success nobody can find again', async () => {
+    const { repository } = recordingRepository(() => Promise.reject(new Error('disk is full')));
+    const { orchestrator } = harnessFor({ runs: repository });
+    const result = await orchestrator.start(start());
+
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') return;
+    expect(result.code).toBe('PersistenceFailed');
+    expect(result.reason).toBe('disk is full');
+  });
+
+  it('still hands back the artifacts, which were produced and paid for', async () => {
+    const { repository } = recordingRepository(() => Promise.reject(new Error('disk is full')));
+    const { orchestrator } = harnessFor({ runs: repository });
+    const result = await orchestrator.start(start());
+
+    expect(result.run.state.artifacts).toHaveLength(2);
+    expect(result.run.state.status).toBe('completed');
+  });
+
+  it('keeps the original code when the run had already failed', async () => {
+    // The first cause is what an operator acts on; the storage fault is
+    // appended, never substituted.
+    const { repository } = recordingRepository(() => Promise.reject(new Error('disk is full')));
+    const { orchestrator } = harnessFor({ runs: repository });
+    const result = await orchestrator.start(start({ workflowId: 'article.branching' }));
+
+    expect(result.outcome).toBe('failed');
+    if (result.outcome !== 'failed') return;
+    expect(result.code).toBe('CompilationFailed');
+    expect(result.reason).toMatch(/It was also not stored: disk is full/);
   });
 });

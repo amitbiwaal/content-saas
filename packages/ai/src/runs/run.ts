@@ -113,6 +113,15 @@ export const RUN_FAILURE_CODES = [
   'StreamingUnsupported',
   'Cancelled',
   'Timeout',
+  /**
+   * The run happened and was not stored.
+   *
+   * Both halves are true, and both matter: the artifacts are on the result and
+   * are usable, and persistence is the source of truth, so a run missing from
+   * it is a run nobody will find again. Reporting success would tell a caller
+   * there is a durable record when there is not.
+   */
+  'PersistenceFailed',
 ] as const;
 
 export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];

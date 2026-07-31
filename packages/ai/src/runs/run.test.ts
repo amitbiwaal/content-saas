@@ -171,6 +171,9 @@ describe('the failure taxonomy', () => {
       'StreamingUnsupported',
       'Cancelled',
       'Timeout',
+      // S4.4. The run happened and was not stored — both facts are true, and
+      // reporting success would promise a durable record that does not exist.
+      'PersistenceFailed',
     ]);
   });
 
