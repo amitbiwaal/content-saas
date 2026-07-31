@@ -31,7 +31,17 @@ export type BillingErrorCode =
   /** The record belongs to a different organization than the caller assumed. */
   | 'OwnershipMismatch'
   /** An older version of a record arriving after a newer one. */
-  | 'StaleVersion';
+  | 'StaleVersion'
+  // ── Added by the payment provider layer ───────────────────────────────────
+  // One taxonomy for one module. A payment failure that a provider REPORTS is
+  // a `PaymentResult` value, not one of these — these are the ways a caller,
+  // or a forged request, is wrong.
+  /** A provider id this build does not know. */
+  | 'UnknownProvider'
+  /** A webhook body that is not the shape a webhook has. */
+  | 'MalformedWebhook'
+  /** A webhook whose event id has already been recorded. */
+  | 'DuplicateWebhook';
 
 export class BillingError extends Error {
   readonly code: BillingErrorCode;

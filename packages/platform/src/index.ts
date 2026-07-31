@@ -878,3 +878,67 @@ export type {
   SubscriptionRepository,
   SubscriptionSlice,
 } from './billing/repository.js';
+
+// ── S5.6 · Payment provider ─────────────────────────────────────────────────
+//
+// The `PaymentProvider` port (ADR-012) and the Stripe adapter that implements
+// it. Stripe is an implementation detail: nothing below `./billing/payments/
+// stripe/` appears here, and no Stripe wire shape appears on any signature.
+//
+// The provider never owns commercial state. It reports what happened at the
+// provider; Billing decides what that means.
+
+export type {
+  CancelSubscriptionCommand,
+  CreateCheckoutSessionCommand,
+  CreateCustomerCommand,
+  CreatePortalSessionCommand,
+  CreateSubscriptionCommand,
+  PaymentCustomer,
+  PaymentEvent,
+  PaymentEventType,
+  PaymentFailure,
+  PaymentFailureReason,
+  PaymentProvider,
+  PaymentProviderId,
+  PaymentResult,
+  PaymentSession,
+  PaymentSessionKind,
+  PaymentSubscriptionRef,
+  WebhookDelivery,
+  WebhookOutcome,
+} from './billing/payments/provider.js';
+export {
+  assertNoDuplicateEvent,
+  assertPaymentOwnership,
+  assertPaymentProviderId,
+  failed as paymentFailed,
+  isPaymentEventType,
+  isPaymentFailureReason,
+  isPaymentProviderId,
+  PAYMENT_EVENT_TYPES,
+  PAYMENT_FAILURE_REASONS,
+  PAYMENT_PROVIDER_IDS,
+  PAYMENT_SESSION_KINDS,
+  RETRYABLE_FAILURE_REASONS,
+  succeeded as paymentSucceeded,
+} from './billing/payments/provider.js';
+
+export type {
+  PaymentCustomerRepository,
+  PaymentEventPosition,
+  PaymentEventQuery,
+  PaymentEventRepository,
+  PaymentEventSlice,
+  RecordEventOutcome,
+} from './billing/payments/repository.js';
+
+// The adapter's factory and its transport seam. The mapping functions and every
+// `*Wire` type stay inside the adapter directory — exporting one would put
+// Stripe's JSON in the platform's vocabulary.
+export type {
+  StripeAdapterOptions,
+  StripeTransport,
+  StripeTransportResponse,
+} from './billing/payments/stripe/adapter.js';
+export { createStripeProvider } from './billing/payments/stripe/adapter.js';
