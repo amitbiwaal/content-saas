@@ -467,4 +467,51 @@ export {
 } from './gateway/ports.js';
 
 export type { Gateway, GatewayOptions } from './gateway/admission.js';
+
+// Request routing — `08-ai-platform/model-router.md`, ADR-008. The only
+// component that decides which model executes a request. It SELECTS; the
+// Gateway dispatches; the retry strategy decides when a chain advances.
+export type {
+  ExecutionMode,
+  ExecutionPlan,
+  RouteTarget,
+  RoutingPolicyName,
+  RoutingReason,
+  RoutingRejectionCode,
+  RoutingResult,
+  StreamingMode,
+} from './routing/plan.js';
+export {
+  EXECUTION_MODES,
+  freezePlan,
+  isRoutingReason,
+  isRoutingRejectionCode,
+  ROUTING_POLICIES,
+  ROUTING_REASONS,
+  ROUTING_REJECTION_CODES,
+  STREAMING_MODES,
+} from './routing/plan.js';
+
+export type { CatalogueErrorCode, ModelCatalogue, ModelEntry } from './routing/catalogue.js';
+export {
+  CATALOGUE_ERROR_CODES,
+  CatalogueError,
+  createModelCatalogue,
+  isCatalogueError,
+} from './routing/catalogue.js';
+
+export type {
+  ProviderPreference,
+  RoutingTable,
+  RoutingTableErrorCode,
+  RoutingTableOptions,
+} from './routing/policy.js';
+export {
+  createRoutingTable,
+  ROUTING_TABLE_ERROR_CODES,
+  RoutingTableError,
+} from './routing/policy.js';
+
+export type { Router, RouterOptions, RoutingInput } from './routing/router.js';
+export { createRouter, RoutingInputError } from './routing/router.js';
 export { createGateway, PIPELINE_ORDER } from './gateway/admission.js';
