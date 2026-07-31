@@ -61,3 +61,35 @@ export {
   startup,
   StartupTracker,
 } from './health/endpoints.js';
+
+// The AI REST layer — transport over the Gateway (S3.1). Controllers validate
+// HTTP, call `Gateway.admit`, and map the answer. No business logic.
+export type {
+  ApiErrorCode,
+  ApiRequest,
+  ApiResponse,
+  ApiResult,
+  ApiStreamResponse,
+  ErrorBody,
+} from './ai/http.js';
+export { API_ERROR_MESSAGES, errorFor, isStreamResponse, ok, requestIdOf } from './ai/http.js';
+
+export type { ScopedRead, ValidationOutcome } from './ai/validation.js';
+export { readResumeToken, toGatewayRequest, toScopedRead } from './ai/validation.js';
+
+export type { AiDispatcher, JobReader, WorkflowReader } from './ai/ports.js';
+
+export type { DispatcherOptions } from './ai/dispatch.js';
+export { createProviderDispatcher } from './ai/dispatch.js';
+
+export type { AiControllerOptions, AiControllers } from './ai/controllers.js';
+export { createAiControllers, failureResponse, rejectionResponse } from './ai/controllers.js';
+
+export type { AiRoute, RouteMatch } from './ai/routes.js';
+export {
+  AI_BASE_PATH,
+  AI_ROUTES,
+  createAiRouter,
+  matchPattern,
+  resolveRoute,
+} from './ai/routes.js';
