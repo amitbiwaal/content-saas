@@ -625,3 +625,49 @@ export {
   WORKFLOW_RESOLUTION_CODES,
 } from './blueprints/resolve.js';
 export { createGateway, PIPELINE_ORDER } from './gateway/admission.js';
+
+// ── S4.3 · Content run orchestration ────────────────────────────────────────
+
+export type {
+  RunError as ContentRunError,
+  RunErrorCode,
+  RunStatus,
+  RunTransition,
+  RunTransitionRule,
+} from './runs/state.js';
+export {
+  assertTransitionAllowed as assertRunTransitionAllowed,
+  canTransition as canRunTransition,
+  INITIAL_RUN_STATUS,
+  isRunError,
+  isRunStatus,
+  isTerminalRunStatus,
+  RUN_ERROR_CODES,
+  RUN_STATUSES,
+  RUN_TRANSITION_RULES,
+  RUN_TRANSITIONS,
+  RunError,
+  TERMINAL_RUN_STATUSES,
+  targetOf as runTransitionTarget,
+  transitionsFrom as runTransitionsFrom,
+} from './runs/state.js';
+
+export type {
+  ContentArtifact,
+  ContentRun,
+  ContentRunResult,
+  ContentRunState,
+  RunFailureCode,
+  RunMetadata,
+  RunTimings,
+} from './runs/run.js';
+export { isRunFailureCode, RUN_FAILURE_CODES, totalTokens } from './runs/run.js';
+
+export type {
+  Orchestrator,
+  OrchestratorOptions,
+  RunCancellation,
+  RunExecutor,
+  StartRunOptions,
+} from './runs/orchestrator.js';
+export { createOrchestrator } from './runs/orchestrator.js';
