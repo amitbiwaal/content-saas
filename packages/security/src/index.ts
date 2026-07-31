@@ -271,3 +271,130 @@ export type {
   ImmutableAuditRecord,
 } from './audit/service.js';
 export { createAuditService, freezeAuditRecord } from './audit/service.js';
+
+// ── S6.3 · Security hardening (posture) ─────────────────────────────────────
+//
+// Every CONTROL already exists and is canonical: `authn/` authenticates,
+// `authz/evaluator.ts` decides, `crypto/primitives.ts` hashes, RLS confines,
+// `services/api/src/ratelimit` throttles, `idempotency/` deduplicates,
+// `AuditService` records, and the observability backstop redacts. None of them
+// is touched, wrapped or duplicated here.
+//
+// What was missing is the POSTURE layer: the threat model as data, the policies
+// that claim controls against it, the findings a scan produces, and the report
+// they add up to. Every mitigation in the platform cites a threat by number in
+// a COMMENT, so nothing could answer "which of the twenty-six has no declared
+// control" — the question an assessment exists to ask.
+//
+// It observes and enforces nothing. There is no path from here to a control.
+
+export type { SecurityCategory, SecuritySeverity, Threat, ThreatId } from './hardening/threats.js';
+export {
+  isKnownThreat,
+  isSecurityCategory,
+  isSecuritySeverity,
+  isThreatIdShape,
+  SECURITY_CATEGORIES,
+  SECURITY_SEVERITIES,
+  SEVERITY_DEFINITIONS,
+  severityRank,
+  threatOf,
+  THREATS,
+  threatsIn,
+  worstOf,
+} from './hardening/threats.js';
+
+export type { SecurityErrorCode } from './hardening/errors.js';
+export {
+  assertIdentifier as assertSecurityIdentifier,
+  assertInstant as assertSecurityInstant,
+  MAX_IDENTIFIER_LENGTH,
+  SecurityError,
+} from './hardening/errors.js';
+
+export type {
+  EnforcementMode,
+  PolicyId,
+  PolicyStatus,
+  SecurityPolicy,
+  SecurityRule,
+} from './hardening/policy.js';
+export {
+  assertValidPolicy,
+  assertValidRule,
+  createSecurityPolicy,
+  ENFORCEMENT_MODES,
+  inherentSeverity,
+  isEnforcementMode,
+  isPolicyStatus,
+  MAX_TEXT_LENGTH,
+  POLICY_STATUSES,
+  ruleOf,
+} from './hardening/policy.js';
+
+export type {
+  FindingId,
+  FindingStatus,
+  SecurityFinding,
+  SecurityRecommendation,
+} from './hardening/finding.js';
+export {
+  assertValidEvidence,
+  assertValidFinding,
+  assertValidRecommendation,
+  createSecurityFinding,
+  FINDING_STATUSES,
+  fingerprintOf,
+  isFindingStatus,
+  isUnresolved,
+  MAX_EVIDENCE_KEYS,
+  MAX_EVIDENCE_VALUE_LENGTH,
+  UNRESOLVED_STATUSES,
+} from './hardening/finding.js';
+
+export type {
+  AssessmentId,
+  AssessmentScope,
+  ScanResult,
+  SecurityAssessment,
+  SecurityCompliance,
+  SecurityReport,
+  SecuritySummary,
+} from './hardening/assessment.js';
+export {
+  assertValidAssessment,
+  buildSecurityReport,
+  calculateCompliance,
+  createSecurityAssessment,
+  disappearedFindings,
+  newFindings,
+  summarize,
+} from './hardening/assessment.js';
+
+export type {
+  AssessmentQuery,
+  AssessmentSlice,
+  FindingPosition,
+  FindingQuery,
+  FindingSlice,
+  PolicyQuery,
+  PolicySlice,
+  SecurityAssessmentRepository,
+  SecurityFindingRepository,
+  SecurityPolicyRepository,
+} from './hardening/repository.js';
+
+export type {
+  PostureAction,
+  RecordAssessmentCommand,
+  SecurityAssessmentService,
+  SecurityAssessmentServiceOptions,
+  SecurityPolicyService,
+  SecurityPolicyServiceOptions,
+} from './hardening/service.js';
+export {
+  createSecurityAssessmentService,
+  createSecurityPolicyService,
+  POSTURE_ACTIONS,
+  toAuditEvent,
+} from './hardening/service.js';
