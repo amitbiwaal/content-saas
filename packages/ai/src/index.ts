@@ -768,3 +768,86 @@ export type {
   RunLookupResult,
 } from './history/service.js';
 export { createRunHistory, isRunHistoryCode, RUN_HISTORY_CODES } from './history/service.js';
+
+// ── S4.6 · Draft management ─────────────────────────────────────────────────
+
+export type {
+  DraftError as ContentDraftError,
+  DraftErrorCode,
+  DraftStatus,
+  DraftTransition,
+  DraftTransitionRule,
+} from './drafts/status.js';
+export {
+  assertTransitionAllowed as assertDraftTransitionAllowed,
+  canTransition as canDraftTransition,
+  DRAFT_ERROR_CODES,
+  DRAFT_STATUSES,
+  DRAFT_TRANSITION_RULES,
+  DRAFT_TRANSITIONS,
+  DraftError,
+  INITIAL_DRAFT_STATUS,
+  isDraftError,
+  isDraftStatus,
+  isTerminalDraftStatus,
+  TERMINAL_DRAFT_STATUSES,
+  targetOf as draftTransitionTarget,
+  transitionsFrom as draftTransitionsFrom,
+} from './drafts/status.js';
+
+export type {
+  AppendRevisionOptions,
+  ContentDraft,
+  DraftMetadata,
+  DraftVersion,
+  NewDraftOptions,
+  RevisionChanges,
+} from './drafts/draft.js';
+export {
+  appendRevision,
+  describeDraft,
+  draftStatus,
+  latestRevision,
+  newDraft,
+} from './drafts/draft.js';
+
+export type {
+  DraftListCriteria,
+  DraftListSlice,
+  DraftRepository,
+  UpdateDraftInput,
+} from './drafts/repository.js';
+
+export type {
+  DraftValidation,
+  DraftValidationOptions,
+  RequiredInput,
+} from './drafts/validation.js';
+export { requiredInputsFor, validateDraft } from './drafts/validation.js';
+
+export type {
+  CompileDraftOptions,
+  ContentRunRequest,
+  DraftCompilation,
+  DraftCompilationCode,
+} from './drafts/compile.js';
+export { compileDraft, DRAFT_COMPILATION_CODES, isDraftCompilationCode } from './drafts/compile.js';
+
+export type {
+  CreateDraftOptions,
+  DraftListResult,
+  DraftRefusal,
+  DraftRemovalResult,
+  DraftResult,
+  DraftService,
+  DraftServiceCode,
+  DraftServiceOptions,
+  ReviseDraftOptions,
+} from './drafts/service.js';
+export {
+  createDraftService,
+  DEFAULT_DRAFT_LIST_LIMIT,
+  DRAFT_SERVICE_CODES,
+  isDraftServiceCode,
+  MAX_DRAFT_LIST_LIMIT,
+} from './drafts/service.js';
