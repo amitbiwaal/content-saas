@@ -944,3 +944,42 @@ export type {
   ExportResult,
 } from './exports/service.js';
 export { createContentExport, EXPORT_CODES, isExportCode } from './exports/service.js';
+
+// ── S4.9 · Content management facade ────────────────────────────────────────
+
+export type {
+  ContentContext,
+  ContentData,
+  ContentOperation,
+  ContentRefusal,
+  ContentRequest,
+  ContentResponse,
+  ContentSuccess,
+  ContentTrace,
+  CreateDraftPayload,
+  DraftIdPayload,
+  ExportPayload,
+  ExportTarget,
+  ListDraftsPayload,
+  ListRunsPayload,
+  RunIdPayload,
+  SearchPayload,
+  SubmitDraftPayload,
+  UpdateDraftPayload,
+} from './facade/model.js';
+export { CONTENT_OPERATIONS, isContentOperation } from './facade/model.js';
+
+export type { RequestIssue, RequestValidation } from './facade/validation.js';
+export { validateContentRequest } from './facade/validation.js';
+
+export type {
+  ContentErrorCode,
+  ContentManagementOptions,
+  ContentManagementService,
+  DraftCompiler,
+} from './facade/service.js';
+export {
+  CONTENT_ERROR_CODES,
+  createContentManagement,
+  isContentErrorCode,
+} from './facade/service.js';
