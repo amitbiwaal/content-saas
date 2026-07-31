@@ -902,3 +902,45 @@ export type {
   SearchResult,
 } from './search/service.js';
 export { createContentSearch, isSearchCode, SEARCH_CODES } from './search/service.js';
+
+// ── S4.8 · Content export ───────────────────────────────────────────────────
+
+export type {
+  BulkExportRequest,
+  ContentExport,
+  ContentExportFormat,
+  ContentExportRequest,
+  ContentExportType,
+  ExportArtifact,
+  ExportItem,
+  ExportMetadata,
+} from './exports/model.js';
+export {
+  CONTENT_EXPORT_FORMATS,
+  CONTENT_EXPORT_TYPES,
+  EXPORT_FORMAT_VERSIONS,
+  EXPORT_SCHEMA_VERSION,
+  isContentExportFormat,
+  isContentExportType,
+  isSupportedExportSchemaVersion,
+  SUPPORTED_EXPORT_SCHEMA_VERSIONS,
+} from './exports/model.js';
+
+export type { SerializeOptions } from './exports/format.js';
+export {
+  canonicalJson,
+  FORMAT_FILE_EXTENSIONS,
+  FORMAT_MEDIA_TYPES,
+  formatVersionOf,
+  readExportMetadata,
+  serializeExport,
+} from './exports/format.js';
+
+export type {
+  ContentExportOptions,
+  ContentExportService,
+  ExportCode,
+  ExportRefusal,
+  ExportResult,
+} from './exports/service.js';
+export { createContentExport, EXPORT_CODES, isExportCode } from './exports/service.js';
