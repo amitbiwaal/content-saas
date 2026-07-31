@@ -767,3 +767,114 @@ export type {
   SettlementRepository,
   SettlementSlice,
 } from './credits/settlement-repository.js';
+
+// ── S5.5 · Commerce ─────────────────────────────────────────────────────────
+//
+// The Billing domain — `04-platform/billing.md`. The supplier of entitlement:
+// it publishes PlanLimits, and everything else applies them.
+//
+// The consumers of this already existed and were waiting for an author —
+// `organizations.plan_limits` ("Projection from Commerce, never authored
+// here"), `organizations.billing_ref`, the `past_due` organization status, and
+// the `entitlement` feature flags owned by `platform.billing`. Nothing here
+// duplicates them: `BillingStatus` IS `OrganizationStatus`, and
+// `BillingAccountId` IS the organization's id.
+//
+// No payments, no invoices, no provider. Those are S5.6 and beyond.
+
+export type { BillingErrorCode } from './billing/errors.js';
+export { BillingError } from './billing/errors.js';
+
+export type {
+  BillingAccount,
+  BillingAccountId,
+  BillingCurrency,
+  BillingStatus,
+} from './billing/account.js';
+export {
+  assertBillingCurrency,
+  assertOneAccountPerOrganization,
+  assertOwnedBy,
+  BILLABLE_STATUSES,
+  createBillingAccount,
+  isBillable,
+  isBillingStatus,
+} from './billing/account.js';
+
+export type { BillingCycle, BillingPeriod } from './billing/period.js';
+export {
+  advanceTo,
+  assertBillingCycle,
+  BILLING_CYCLES,
+  createBillingPeriod,
+  firstPeriod,
+  hasPeriodElapsed,
+  isBillingCycle,
+  MONTHS_PER_CYCLE,
+  nextPeriod,
+  periodContains,
+} from './billing/period.js';
+
+export type {
+  CommercialPlan,
+  PlanCode,
+  PlanId,
+  PlanLimits,
+  PlanRateLimits,
+  PlanStatus,
+  RateLimitClass,
+} from './billing/plan.js';
+export {
+  assertNewerVersion as assertNewerPlanVersion,
+  assertSubscribable,
+  createPlan,
+  createPlanLimits,
+  entitles,
+  isPlanCode,
+  isPlanStatus,
+  PLAN_CODES,
+  PLAN_STATUSES,
+  RATE_LIMIT_CLASSES,
+  UNSET_RATE_LIMITS,
+} from './billing/plan.js';
+
+export type {
+  Subscription,
+  SubscriptionId,
+  SubscriptionStatus,
+  SubscriptionTransition,
+  SubscriptionTransitionRule,
+} from './billing/subscription.js';
+export {
+  applyTransition,
+  assertIdentityUnchanged,
+  assertNoLiveConflict,
+  assertNotStale,
+  assertTransitionAllowed as assertSubscriptionTransitionAllowed,
+  canTransition as canSubscriptionTransition,
+  changePlan,
+  createSubscription,
+  ENTITLING_SUBSCRIPTION_STATUSES,
+  INITIAL_SUBSCRIPTION_STATUS,
+  isDueForRenewal,
+  isEntitling,
+  isSubscriptionStatus,
+  isTerminal as isTerminalSubscription,
+  renew,
+  SUBSCRIPTION_STATUSES,
+  SUBSCRIPTION_TRANSITION_RULES,
+  SUBSCRIPTION_TRANSITIONS,
+  TERMINAL_SUBSCRIPTION_STATUS,
+  transitionsFrom as subscriptionTransitionsFrom,
+} from './billing/subscription.js';
+
+export type {
+  BillingAccountRepository,
+  PlanQuery,
+  PlanRepository,
+  PlanSlice,
+  SubscriptionPosition,
+  SubscriptionQuery,
+  SubscriptionRepository,
+  SubscriptionSlice,
+} from './billing/repository.js';
