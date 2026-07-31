@@ -645,3 +645,57 @@ export {
   DEFAULT_MAX_LEDGER_ENTRIES,
   loadWholeLedger,
 } from './credits/walk.js';
+
+// ── S5.2 · Reservation core ─────────────────────────────────────────────────
+//
+// Additive to the Sprint 1 hold protocol, not a second one: the commercial
+// vocabulary and its transition table, the pure availability calculation, and a
+// port for readers that have no database.
+
+export type {
+  CreditReservation,
+  ReservationId,
+  ReservationMetadata,
+  ReservationStatus,
+  ReservationTransition,
+  ReservationTransitionRule,
+} from './credits/reservation.js';
+export {
+  ACTIVE_RESERVATION_STATUS,
+  assertExpirable,
+  assertTransitionAllowed as assertReservationTransitionAllowed,
+  canTransition as canReservationTransition,
+  expiredAmong,
+  HOLD_STATE_TO_STATUS,
+  INITIAL_RESERVATION_STATUS,
+  isExpired,
+  isReservationStatus,
+  isTerminalReservationStatus,
+  RESERVATION_STATUSES,
+  RESERVATION_TRANSITION_RULES,
+  RESERVATION_TRANSITIONS,
+  STATUS_TO_HOLD_STATE,
+  statusOf,
+  statusToHoldState,
+  targetOf as reservationTransitionTarget,
+  TERMINAL_RESERVATION_STATUSES,
+  toCreditReservation,
+  transitionsFrom as reservationTransitionsFrom,
+} from './credits/reservation.js';
+
+export type { AvailabilityOptions, AvailabilityReading } from './credits/availability.js';
+export {
+  assertSufficient,
+  calculateAvailability,
+  hasSufficient,
+  reservedAmount,
+} from './credits/availability.js';
+
+export type {
+  CloseReservationInput,
+  CreditReservationRepository,
+  NewReservation,
+  ReservationPosition,
+  ReservationQuery,
+  ReservationSlice,
+} from './credits/reservation-repository.js';
