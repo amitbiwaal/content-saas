@@ -68,6 +68,7 @@ import {
   createRateLimitEnforcer,
   createRedisIdempotencyStore,
   createRedisRateLimiter,
+  createVersionRegistry,
   type RedisCommands,
 } from '@contentos/api';
 import { describe, expect, it } from 'vitest';
@@ -254,7 +255,14 @@ function compose(overrides: DirectoryOverrides = {}): Composed {
   });
 
   return {
-    route: createAiRouter({ controllers, auth, ...pipelineCollaborators() }),
+    route: createAiRouter({
+      controllers,
+      auth,
+      versions: createVersionRegistry({
+        versions: [{ version: 'v1', status: 'current', releasedAt: '2026-01-01T00:00:00.000Z' }],
+      }),
+      ...pipelineCollaborators(),
+    }),
     admitted,
   };
 }

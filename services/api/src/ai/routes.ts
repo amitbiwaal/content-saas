@@ -8,7 +8,15 @@
  * sending a request. An endpoint that forgot its permission would not compile.
  *
  * ── The order is a security property ────────────────────────────────────────
- *   authenticate → route → authorize → rate limit → idempotency → handler
+ *   version → authenticate → route → authorize → rate limit → idempotency → handler
+ *
+ * VERSION NEGOTIATION RUNS FIRST, before authentication, and that is the one
+ * check placed ahead of it. The supported version set is published in the
+ * OpenAPI document, so refusing an unsupported version discloses nothing that
+ * is not already public — unlike the route table, which is why routing stays
+ * behind authentication. Checking it first also means a client pinned to a
+ * retired version receives the 410 that tells it to migrate, rather than a 401
+ * that sends it looking at its credentials.
  *
  * Authentication comes BEFORE routing, which is what `pipeline/order.ts`
  * already requires of validation and for the same reason: "validation errors
@@ -48,10 +56,13 @@ import {
 } from '../idempotency/guard.js';
 import type { RateLimitEnforcer } from '../ratelimit/enforcer.js';
 import type { RateLimitClass, RateLimitSubject } from '../ratelimit/policy.js';
+import { negotiateVersion } from '../versioning/negotiate.js';
+import type { VersionRegistry } from '../versioning/registry.js';
 import {
   errorFor,
   isStreamResponse,
   type ApiRequest,
+  type ApiResponse,
   type ApiResult,
   type AuthenticatedRequest,
 } from './http.js';
@@ -206,6 +217,7 @@ export interface AiRouterOptions {
   readonly auth: AuthMiddleware;
   readonly rateLimit: RateLimitEnforcer;
   readonly idempotency: IdempotencyGuard;
+  readonly versions: VersionRegistry;
 }
 
 /** Attach headers to whichever shape the controller returned. */
@@ -217,32 +229,62 @@ function withHeaders(result: ApiResult, headers: Readonly<Record<string, string>
 export function createAiRouter(
   options: AiRouterOptions,
 ): (request: ApiRequest) => Promise<ApiResult> {
-  const { controllers, auth, rateLimit, idempotency } = options;
+  const { controllers, auth, rateLimit, idempotency, versions } = options;
 
   return async function route(request: ApiRequest): Promise<ApiResult> {
     const { requestId } = requestIdsOf(request);
 
-    // 1 · Authenticate FIRST — see the file header. Nothing about the API's
-    //     shape is disclosed to a caller that has not proved who it is.
-    const authenticated = await auth.authenticate(request);
-    if (authenticated.outcome === 'failed') {
-      return unauthenticatedResponse(authenticated.reason, requestId);
+    // 1 · Negotiate the version. Its headers ride on EVERY response below,
+    //     including the errors — a client whose calls are failing is exactly
+    //     the one about to investigate, and the deprecation notice is the only
+    //     channel that reaches an integration nobody is watching.
+    const negotiated = negotiateVersion(versions, request.path);
+    const versionHeaders = negotiated.headers;
+
+    if (negotiated.outcome === 'unsupported') {
+      // Rejected, never defaulted: "defaulting to the newest lets an attacker
+      // probe for a version with weaker checks" (`api-security.md`).
+      return errorFor(400, 'unsupported_version', requestId, undefined, versionHeaders);
+    }
+    if (negotiated.outcome === 'retired') {
+      // 410, never a fallback. Serving a retired version's call as the current
+      // one applies the current version's authorization semantics to a client
+      // expecting another (`api-versioning.md`).
+      return errorFor(410, 'version_retired', requestId, undefined, versionHeaders);
     }
 
-    // 2 · Route, now that the caller is known.
+    // 2 · Authenticate. Nothing about the API's SHAPE is disclosed to a caller
+    //     that has not proved who it is — see the file header.
+    const authenticated = await auth.authenticate(request);
+    if (authenticated.outcome === 'failed') {
+      return withHeaders(
+        unauthenticatedResponse(authenticated.reason, requestId),
+        versionHeaders,
+      ) as ApiResponse;
+    }
+
+    // 3 · Route, now that the caller is known.
     const resolved = resolveRoute(request.method, request.path);
-    if (resolved === null) return errorFor(404, 'not_found', requestId);
+    if (resolved === null) {
+      return errorFor(404, 'not_found', requestId, undefined, versionHeaders);
+    }
     if (!('route' in resolved)) {
       return errorFor(405, 'method_not_allowed', requestId, undefined, {
+        ...versionHeaders,
         allow: resolved.allowed.join(', '),
       });
     }
 
-    // 3 · Authorize against what THIS route requires.
+    // 4 · Authorize against what THIS route requires.
     const decision = await auth.authorize(authenticated, request, resolved.route.permission);
-    if (decision.outcome === 'denied') return forbiddenResponse(decision.reason, requestId);
+    if (decision.outcome === 'denied') {
+      return withHeaders(
+        forbiddenResponse(decision.reason, requestId),
+        versionHeaders,
+      ) as ApiResponse;
+    }
 
-    // 4 · Rate limit, now that the workspace and organization are RESOLVED.
+    // 5 · Rate limit, now that the workspace and organization are RESOLVED.
     const subject: RateLimitSubject = {
       principal: decision.context.principal,
       apiKeyId: authenticated.subject.kind === 'api-key' ? authenticated.subject.subjectId : null,
@@ -253,18 +295,24 @@ export function createAiRouter(
     };
     const limited = await rateLimit.check(subject, resolved.route.rateLimitClass);
     if (limited.outcome === 'unavailable') {
-      return errorFor(503, 'service_unavailable', requestId, undefined, { 'retry-after': '1' });
+      return errorFor(503, 'service_unavailable', requestId, undefined, {
+        ...versionHeaders,
+        'retry-after': '1',
+      });
     }
     if (limited.outcome === 'limited') {
       // The policy name is not returned. Which dimension bound is operational
       // detail, and disclosing it would let a caller probe for the loosest one.
       return errorFor(429, 'rate_limited', requestId, undefined, {
+        ...versionHeaders,
         ...limited.headers,
         'retry-after': String(limited.retryAfterSeconds),
       });
     }
 
-    // 5 · Idempotency, last, so a refused request never consumes a key.
+    const responseHeaders = { ...versionHeaders, ...limited.headers };
+
+    // 6 · Idempotency, last, so a refused request never consumes a key.
     const clientKey = request.headers[IDEMPOTENCY_KEY_HEADER]?.trim();
     const claim = await idempotency.begin({
       principal: decision.context.principal,
@@ -277,12 +325,12 @@ export function createAiRouter(
       requestId,
     });
     if (claim.outcome === 'replay' || claim.outcome === 'refused') {
-      // Limit headers ride along: a client pacing itself needs them on every
-      // response, including the ones it did not want.
-      return withHeaders(claim.response, limited.headers);
+      // Version and limit headers ride along: a client pacing itself needs
+      // them on every response, including the ones it did not want.
+      return withHeaders(claim.response, responseHeaders);
     }
 
-    // 6 · Hand the controller a request it cannot have obtained any other way.
+    // 7 · Hand the controller a request it cannot have obtained any other way.
     const authenticatedRequest: AuthenticatedRequest = {
       ...request,
       params: { ...request.params, ...resolved.params },
@@ -291,7 +339,7 @@ export function createAiRouter(
 
     if (claim.outcome === 'skipped') {
       const result = await controllers[resolved.route.handler](authenticatedRequest);
-      return withHeaders(result, limited.headers);
+      return withHeaders(result, responseHeaders);
     }
 
     let result: ApiResult;
@@ -311,11 +359,11 @@ export function createAiRouter(
       // duplicate arriving WHILE this one is in flight is still refused — the
       // property that matters — and a genuine retry afterwards may run.
       await idempotency.release(claim.storageKey);
-      return withHeaders(result, limited.headers);
+      return withHeaders(result, responseHeaders);
     }
 
     const withKey = withIdempotencyKey(result, claim.clientKey);
     await idempotency.complete(claim.storageKey, claim.fingerprint, withKey);
-    return withHeaders(withKey, limited.headers);
+    return withHeaders(withKey, responseHeaders);
   };
 }

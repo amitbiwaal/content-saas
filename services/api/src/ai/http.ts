@@ -129,6 +129,12 @@ export const API_ERROR_MESSAGES = {
   service_unavailable: 'The service is temporarily unable to handle the request.',
   timeout: 'The request timed out.',
   method_not_allowed: 'That method is not supported for this path.',
+  // Versioning. `api-security.md`: "Unknown versions are rejected, never
+  // defaulted. Defaulting to the newest lets an attacker probe for a version
+  // with weaker checks." And a retired version is 410, never a fallback —
+  // silently serving a v1 call as v2 applies v2's authorization semantics.
+  unsupported_version: 'That API version is not supported.',
+  version_retired: 'That API version has been retired.',
   internal_error: 'An unexpected error occurred.',
 } as const;
 

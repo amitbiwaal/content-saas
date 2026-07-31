@@ -19,6 +19,7 @@ import { createRateLimitEnforcer } from '../ratelimit/enforcer.js';
 import { createFakeRedis } from '../ratelimit/fake-redis.fixture.js';
 import type { RateLimitPolicy } from '../ratelimit/policy.js';
 import { createRedisRateLimiter } from '../ratelimit/redis-limiter.js';
+import { createVersionRegistry } from '../versioning/registry.js';
 import type { AiControllers } from './controllers.js';
 import {
   ok,
@@ -31,6 +32,12 @@ import {
 import { createAiRouter } from './routes.js';
 
 const START = Date.UTC(2026, 6, 31, 12, 0, 0);
+
+/** The version every existing suite runs against. */
+const VERSIONS = createVersionRegistry({
+  versions: [{ version: 'v1', status: 'current', releasedAt: '2026-01-01T00:00:00.000Z' }],
+});
+
 const ORG = 'org-1';
 const WS = 'ws-1';
 
@@ -113,6 +120,7 @@ function harness(options: HarnessOptions = {}): Harness {
     route: createAiRouter({
       controllers,
       auth: auth(options.context),
+      versions: VERSIONS,
       rateLimit: createRateLimitEnforcer({
         limiter: createRedisRateLimiter({ redis }),
         policies: options.policies ?? [

@@ -7,6 +7,7 @@ import { createRedisIdempotencyStore } from '../idempotency/store.js';
 import { createRateLimitEnforcer, type RateLimitEnforcer } from '../ratelimit/enforcer.js';
 import { createFakeRedis } from '../ratelimit/fake-redis.fixture.js';
 import { createRedisRateLimiter } from '../ratelimit/redis-limiter.js';
+import { createVersionRegistry } from '../versioning/registry.js';
 import type { AiControllers } from './controllers.js';
 import {
   ok,
@@ -103,6 +104,11 @@ function middlewareThat(
 
 const START = Date.UTC(2026, 6, 31, 12, 0, 0);
 
+/** The version every existing suite runs against. */
+const VERSIONS = createVersionRegistry({
+  versions: [{ version: 'v1', status: 'current', releasedAt: '2026-01-01T00:00:00.000Z' }],
+});
+
 /** Everything a router needs, with the limiter and the guard wide open. */
 function collaborators(limit = 1000): {
   rateLimit: RateLimitEnforcer;
@@ -129,6 +135,7 @@ function router(
   return createAiRouter({
     controllers: handlers,
     auth: middleware,
+    versions: VERSIONS,
     ...collaborators(),
     ...over,
   }) as (r: ApiRequest) => Promise<ApiResponse>;

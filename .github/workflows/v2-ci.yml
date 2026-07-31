@@ -106,6 +106,12 @@ jobs:
       - name: 11 · build every workspace
         run: pnpm build
 
+      # Runs against the BUILT package, so what is validated is what ships.
+      # A specification generated from code that failed to compile is not one
+      # anyone can rely on.
+      - name: 12 · OpenAPI 3.1 validation
+        run: pnpm openapi
+
   # ───────────────────────────────────────────────────────────────────────────
   # Runtime verification against real infrastructure.
   # ───────────────────────────────────────────────────────────────────────────

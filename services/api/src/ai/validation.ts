@@ -38,25 +38,85 @@ export type ValidationOutcome<T> =
   | { readonly ok: false; readonly issues: readonly ValidationIssue[] };
 
 /**
- * Every key an execution body may carry. Anything else is rejected.
+ * Every key an execution body may carry, and what each one is.
  *
  * `organizationId`, `workspaceId`, `actorId` and `correlationId` USED TO BE
  * here and deliberately are not any more. They come from the authenticated
  * context, so a caller sending one now gets `UNKNOWN_FIELD` rather than having
  * it quietly ignored — which is the difference between "you cannot assert your
  * own tenancy" and "your assertion had no effect this time".
+ *
+ * This list is DATA rather than a bare key set because the OpenAPI document is
+ * generated from it. A hand-written schema beside a hand-written validator is
+ * two descriptions of one contract, and the published one is the half nobody
+ * runs — so it is the half that drifts.
  */
-const EXECUTION_KEYS = new Set([
-  'taskType',
-  'capability',
-  'providerId',
-  'model',
-  'template',
-  'variables',
-  'params',
-  'timeoutMs',
-  'featureFlag',
+export interface BodyField {
+  readonly name: string;
+  readonly required: boolean;
+  /** JSON Schema type, for the generated document. */
+  readonly type: 'string' | 'object' | 'integer' | 'number';
+  readonly description: string;
+}
+
+export const EXECUTION_BODY_FIELDS: readonly BodyField[] = Object.freeze([
+  Object.freeze({
+    name: 'taskType',
+    required: true,
+    type: 'string' as const,
+    description: "The caller's word for the work, in dot.case. Opaque to the platform.",
+  }),
+  Object.freeze({
+    name: 'capability',
+    required: true,
+    type: 'string' as const,
+    description: 'Which kind of work this is. The provider must declare it.',
+  }),
+  Object.freeze({
+    name: 'providerId',
+    required: true,
+    type: 'string' as const,
+    description: 'The provider expected to serve the request.',
+  }),
+  Object.freeze({
+    name: 'model',
+    required: true,
+    type: 'string' as const,
+    description: 'The model asked for. An alias or a canonical name.',
+  }),
+  Object.freeze({
+    name: 'template',
+    required: true,
+    type: 'object' as const,
+    description: 'The prompt template to render. Clients never submit prompt text.',
+  }),
+  Object.freeze({
+    name: 'variables',
+    required: true,
+    type: 'object' as const,
+    description: "Untrusted values rendered into the template's declared slots.",
+  }),
+  Object.freeze({
+    name: 'params',
+    required: false,
+    type: 'object' as const,
+    description: "Sampling parameters. Omitted, the template's model hints are adopted.",
+  }),
+  Object.freeze({
+    name: 'timeoutMs',
+    required: false,
+    type: 'integer' as const,
+    description: 'Per-request timeout. Adapters never extend it.',
+  }),
+  Object.freeze({
+    name: 'featureFlag',
+    required: false,
+    type: 'string' as const,
+    description: 'A flag this request depends on, where it depends on one.',
+  }),
 ]);
+
+const EXECUTION_KEYS = new Set(EXECUTION_BODY_FIELDS.map((field) => field.name));
 
 const PARAMETER_KEYS = new Set(['temperature', 'maxOutputTokens', 'topP', 'seed', 'stopSequences']);
 

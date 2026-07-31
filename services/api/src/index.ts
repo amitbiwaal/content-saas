@@ -97,7 +97,13 @@ export {
 export { forbiddenResponse, unauthenticatedResponse, WWW_AUTHENTICATE } from './auth/responses.js';
 
 export type { ScopedRead, ValidationOutcome } from './ai/validation.js';
-export { readResumeToken, toGatewayRequest, toScopedRead } from './ai/validation.js';
+export type { BodyField } from './ai/validation.js';
+export {
+  EXECUTION_BODY_FIELDS,
+  readResumeToken,
+  toGatewayRequest,
+  toScopedRead,
+} from './ai/validation.js';
 
 export type { AiDispatcher, JobReader, WorkflowReader } from './ai/ports.js';
 
@@ -181,6 +187,54 @@ export {
   IdempotencyStoreUnavailableError,
   RELEASE_SCRIPT,
 } from './idempotency/store.js';
+
+// API versioning — `06-api/api-versioning.md`. Unknown versions are rejected,
+// never defaulted; a retired one returns 410 rather than falling back.
+export type {
+  ApiVersion,
+  ApiVersionStatus,
+  VersionPolicy,
+  VersionRegistry,
+  VersionRegistryErrorCode,
+  VersionRegistryOptions,
+} from './versioning/registry.js';
+export {
+  API_VERSION_STATUSES,
+  createVersionRegistry,
+  DEFAULT_VERSION_POLICY,
+  isApiVersionStatus,
+  MINIMUM_DEPRECATION_MONTHS,
+  SERVING_STATUSES,
+  VERSION_REGISTRY_ERROR_CODES,
+  VersionRegistryError,
+} from './versioning/registry.js';
+
+export type { VersionNegotiation } from './versioning/negotiate.js';
+export {
+  API_VERSION_HEADER,
+  DEPRECATION_HEADER,
+  LINK_HEADER,
+  negotiateVersion,
+  SUNSET_HEADER,
+  versionFromPath,
+  versionHeaders,
+} from './versioning/negotiate.js';
+
+// The OpenAPI 3.1 document, GENERATED from the contracts above — the route
+// table, the error vocabulary, the accepted body fields, the stream events.
+export type {
+  OpenApiDocument,
+  OpenApiHeader,
+  OpenApiOperation,
+  OpenApiOptions,
+  OpenApiParameter,
+  OpenApiResponse,
+  OpenApiSchema,
+} from './openapi/document.js';
+export { createOpenApiDocument, OPENAPI_VERSION, toOpenApiPath } from './openapi/document.js';
+
+export type { OpenApiIssue, OpenApiValidation } from './openapi/validate.js';
+export { serializeOpenApiDocument, validateOpenApiDocument } from './openapi/validate.js';
 
 export type { BeginInput, IdempotencyGuard, IdempotencyOutcome } from './idempotency/guard.js';
 export {
