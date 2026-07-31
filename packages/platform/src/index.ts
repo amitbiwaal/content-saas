@@ -729,3 +729,41 @@ export type {
   ConsumptionRepository,
   ConsumptionSlice,
 } from './credits/consumption-repository.js';
+
+// ── S5.4 · Release core ─────────────────────────────────────────────────────
+//
+// Additive to the Sprint 1 hold closure, not a second one: the settlement
+// arithmetic and its guards as pure functions, the commercial projection of a
+// closed reservation, and a port for readers that have no database.
+//
+// SETTLED is the S5.2 `consumed` status, narrowed — not a fifth state.
+
+export type {
+  ReservationSettlement,
+  SettlementClosure,
+  SettlementCommand,
+  SettlementId,
+  SettlementStatus,
+  SettlementSummary,
+  SettlementUsage,
+} from './credits/settlement.js';
+export {
+  assertSettleable,
+  closesPermanently,
+  computeSettlement,
+  isSettlementStatus,
+  planSettlement,
+  releasableOf,
+  SETTLED_STATUS,
+  SETTLEMENT_STATUSES,
+  summarizeSettlements,
+  toReservationSettlement,
+  toSettlementClosure,
+} from './credits/settlement.js';
+
+export type {
+  SettlementPosition,
+  SettlementQuery,
+  SettlementRepository,
+  SettlementSlice,
+} from './credits/settlement-repository.js';

@@ -75,7 +75,16 @@ export type HoldErrorCode =
    * wrong organization, workspace or run — which bills the wrong client, in a
    * table with no UPDATE path.
    */
-  | 'ConsumptionMismatch';
+  | 'ConsumptionMismatch'
+  /**
+   * A settlement whose identifiers do not match the reservation it closes.
+   *
+   * Its own code beside `ConsumptionMismatch` because the two have different
+   * causes and page different people: a charge is filed by a workflow step, a
+   * settlement by the orchestrator at the end of a run. Folding them together
+   * would send an operator to the wrong half of the system.
+   */
+  | 'SettlementMismatch';
 
 export class HoldError extends Error {
   readonly code: HoldErrorCode;
